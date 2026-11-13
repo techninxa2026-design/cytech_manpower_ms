@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cytech_mms/main.dart';
 import 'package:cytech_mms/core/app_store.dart';
+import 'package:cytech_mms/core/cytech_theme.dart';
+import 'package:cytech_mms/screens/group_room.dart';
 
 void main(){
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -64,5 +66,18 @@ void main(){
     await tester.pumpAndSettle();
     expect(store.signedIn,isTrue);
     expect(find.text('People in sync.\nWork in motion.'),findsOneWidget);
+  });
+
+  testWidgets('assigned engineer can send a chat message in group UI',(tester)async{
+    final store=AppStore();await store.initialize();
+    store.enter(username:'fahim');
+    await tester.pumpWidget(MaterialApp(theme:cytechTheme(),
+      home:GroupRoom(store:store,groupId:'group-1')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('group_chat_input')),
+      'QA chat message from engineer');
+    await tester.tap(find.byKey(const Key('send_chat')));
+    await tester.pump();
+    expect(store.groupEvents('group-1').last.text,'QA chat message from engineer');
   });
 }
