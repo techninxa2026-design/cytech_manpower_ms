@@ -100,7 +100,8 @@ class CyCard extends StatelessWidget{
   @override Widget build(BuildContext context){
     final inner=Container(margin:margin,padding:padding,decoration:BoxDecoration(color:color,
       borderRadius:BorderRadius.circular(17),border:Border.all(color:cyLine),
-      boxShadow:const [BoxShadow(color:Color(0x07102037),blurRadius:18,offset:Offset(0,4))]),child:child);
+      boxShadow:const [BoxShadow(color:Color(0x07102037),blurRadius:18,offset:Offset(0,4))]),
+      child:Material(type:MaterialType.transparency,child:child));
     if(onTap==null)return inner;
     return InkWell(onTap:onTap,borderRadius:BorderRadius.circular(17),child:inner);
   }
