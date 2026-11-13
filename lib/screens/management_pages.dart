@@ -243,7 +243,7 @@ class _GroupEditorState extends State<GroupEditor>{
           key:const Key('save_group'),onPressed:(){
             if(name.text.trim().isEmpty){toast(context,'Please give the group a name');return;}
             final id=widget.store.saveGroup(id:widget.groupId,
-              name:name.text,description:description.text,imageBase64:image);
+              name:name.text,description:description.text,imageBase64:image??'');
             if(widget.groupId==null){
               Navigator.pushReplacement(context,MaterialPageRoute(builder:(_)=>
                 AssignmentEditor(store:widget.store,groupId:id)));
