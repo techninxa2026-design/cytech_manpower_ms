@@ -54,7 +54,8 @@ class BrandMark extends StatelessWidget {
   const BrandMark({super.key,this.size=42,this.color=cyOrange});
   final double size;final Color color;
   @override Widget build(BuildContext context)=>SizedBox(width:size,height:size,
-    child:CustomPaint(painter:_BrandPainter(color)));
+    child:Image.asset('assets/brand/cytech_logo.png',fit:BoxFit.contain,
+      errorBuilder:(_,__,___)=>CustomPaint(painter:_BrandPainter(color))));
 }
 class _BrandPainter extends CustomPainter{
   _BrandPainter(this.color);final Color color;
