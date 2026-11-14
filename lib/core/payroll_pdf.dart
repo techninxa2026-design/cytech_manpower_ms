@@ -14,7 +14,6 @@ class PayrollPdf {
     final navy=PdfColor.fromHex('#071A2E'),orange=PdfColor.fromHex('#FC4B09'),
       muted=PdfColor.fromHex('#6D7C8B'),light=PdfColor.fromHex('#F2F6F8');
     final bold=pw.TextStyle(fontSize:10,fontWeight:pw.FontWeight.bold,color:navy);
-    final body=pw.TextStyle(fontSize:9,color:navy);
     String money(double n)=>n.toStringAsFixed(2);
     document.addPage(pw.MultiPage(
       pageFormat:PdfPageFormat.a4,
