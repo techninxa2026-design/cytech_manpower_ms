@@ -220,7 +220,18 @@ class AppStore extends ChangeNotifier {
   void _load(Map<String,dynamic> m){
     List<T> parse<T>(String key,T Function(Map<String,dynamic>) f)=>
       (m[key] as List? ?? []).map((x)=>f(Map<String,dynamic>.from(x as Map))).toList();
-    people..clear()..addAll(parse('people',Person.fromJson));
+    // Migrate the original v3 sample accounts, which did not have wage fields.
+    // Never override any rate explicitly saved by an admin.
+    const demoRates=<String,double>{'ayesha':350,'fahim':300,'nabila':310,
+      'rafi':220,'tanvir':235,'sadia':255,'imran':290};
+    final oldPeople=(m['people'] as List? ?? []).map((value){
+      final row=Map<String,dynamic>.from(value as Map);
+      if(!row.containsKey('hourlyRate')&&demoRates.containsKey(row['id'])){
+        row['hourlyRate']=demoRates[row['id']];
+      }
+      return Person.fromJson(row);
+    });
+    people..clear()..addAll(oldPeople);
     teams..clear()..addAll(parse('teams',CrewTeam.fromJson));
     groups..clear()..addAll(parse('groups',WorkGroup.fromJson));
     events..clear()..addAll(parse('events',GroupEvent.fromJson));
