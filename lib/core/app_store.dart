@@ -7,13 +7,15 @@ String newId() => DateTime.now().microsecondsSinceEpoch.toString();
 String dayKey(DateTime date) => date.toIso8601String().substring(0, 10);
 
 class Person {
-  Person({required this.id, required this.name, required this.username, this.isAdmin = false});
+  Person({required this.id, required this.name, required this.username, this.isAdmin = false,this.hourlyRate});
   final String id, name, username;
   final bool isAdmin;
+  final double? hourlyRate;
   factory Person.fromJson(Map<String, dynamic> m) => Person(
     id: m['id'] as String, name: m['name'] as String,
-    username: m['username'] as String, isAdmin: m['isAdmin'] == true);
-  Map<String, dynamic> toJson() => {'id':id,'name':name,'username':username,'isAdmin':isAdmin};
+    username: m['username'] as String, isAdmin: m['isAdmin'] == true,
+    hourlyRate:(m['hourlyRate'] as num?)?.toDouble());
+  Map<String, dynamic> toJson() => {'id':id,'name':name,'username':username,'isAdmin':isAdmin,'hourlyRate':hourlyRate};
 }
 class CrewTeam {
   CrewTeam({required this.id, required this.name, required this.description, required this.memberIds});
@@ -65,15 +67,28 @@ class GroupEvent {
 }
 class AttendanceReport {
   AttendanceReport({required this.id,required this.groupId,required this.date,
-    required this.authorId,required this.createdAt,required this.present});
+    required this.authorId,required this.createdAt,required this.present,
+    this.hours=const {},this.rateSnapshot=const {},this.otMultiplier=1.0});
   final String id,groupId,date,authorId,createdAt;
   final Map<String,bool> present;
+  final Map<String,double> hours;
+  final Map<String,double?> rateSnapshot;
+  final double otMultiplier;
+  double hoursFor(String personId)=>! (present[personId]??false)?0:
+    (hours[personId]??8).clamp(0,24).toDouble();
+  double overtimeFor(String personId)=> (hoursFor(personId)-8).clamp(0,24).toDouble();
+  double get totalHours=>present.keys.fold<double>(0,(sum,id)=>sum+hoursFor(id));
+  double get totalOvertime=>present.keys.fold<double>(0,(sum,id)=>sum+overtimeFor(id));
   factory AttendanceReport.fromJson(Map<String,dynamic> m)=>AttendanceReport(
     id:m['id'] as String,groupId:m['groupId'] as String,date:m['date'] as String,
     authorId:m['authorId'] as String,createdAt:m['createdAt'] as String,
-    present:Map<String,bool>.from(m['present'] as Map? ?? {}));
+    present:Map<String,bool>.from(m['present'] as Map? ?? {}),
+    hours:(m['hours'] as Map? ?? {}).map((k,v)=>MapEntry(k.toString(),(v as num).toDouble())),
+    rateSnapshot:(m['rateSnapshot'] as Map? ?? {}).map((k,v)=>MapEntry(k.toString(),(v as num?)?.toDouble())),
+    otMultiplier:(m['otMultiplier'] as num?)?.toDouble()??1.0);
   Map<String,dynamic> toJson()=>{'id':id,'groupId':groupId,'date':date,
-    'authorId':authorId,'createdAt':createdAt,'present':present};
+    'authorId':authorId,'createdAt':createdAt,'present':present,
+    'hours':hours,'rateSnapshot':rateSnapshot,'otMultiplier':otMultiplier};
   int get presentCount=>present.values.where((v)=>v).length;
   int get absentCount=>present.values.where((v)=>!v).length;
 }
@@ -88,6 +103,24 @@ class GroupComplaint {
   Map<String,dynamic> toJson()=>{'id':id,'groupId':groupId,'authorId':authorId,
     'text':text,'status':status,'createdAt':createdAt};
 }
+
+class WorkNotice {
+  WorkNotice({required this.id,required this.authorId,required this.company,
+    required this.location,required this.date,required this.reportingTime,
+    required this.memberIds,required this.createdAt,this.instructions=''});
+  final String id,authorId,company,location,date,reportingTime,createdAt,instructions;
+  final List<String> memberIds;
+  factory WorkNotice.fromJson(Map<String,dynamic> m)=>WorkNotice(
+    id:m['id'] as String,authorId:m['authorId'] as String,
+    company:m['company'] as String,location:m['location'] as String,
+    date:m['date'] as String,reportingTime:m['reportingTime'] as String,
+    createdAt:m['createdAt'] as String,instructions:(m['instructions']??'') as String,
+    memberIds:List<String>.from(m['memberIds'] as List? ?? []));
+  Map<String,dynamic> toJson()=>{'id':id,'authorId':authorId,'company':company,
+    'location':location,'date':date,'reportingTime':reportingTime,
+    'createdAt':createdAt,'instructions':instructions,'memberIds':memberIds};
+}
+
 class AppStore extends ChangeNotifier {
   static const storageKey='cytech_manpower_offline_v1';
   final List<Person> people=[];
@@ -96,12 +129,17 @@ class AppStore extends ChangeNotifier {
   final List<GroupEvent> events=[];
   final List<AttendanceReport> attendance=[];
   final List<GroupComplaint> complaints=[];
+  final List<WorkNotice> workNotices=[];
+  double overtimeMultiplier=1.0;
   String currentUserId='admin';
   bool signedIn=false;
   String? storageError;
   SharedPreferences? _prefs;
   Person get me=>person(currentUserId);
   bool get isAdmin=>me.isAdmin;
+  bool get canPublishWorkNotice=>isAdmin||groups.any((g)=>g.roleOf(currentUserId)=='supervisor');
+  List<WorkNotice> get visibleWorkNotices=>workNotices.where((n)=>isAdmin||n.authorId==currentUserId||n.memberIds.contains(currentUserId)).toList()
+    ..sort((a,b)=>b.createdAt.compareTo(a.createdAt));
   Person person(String id)=>people.firstWhere((p)=>p.id==id,orElse:()=>Person(id:id,name:'Unknown member',username:id));
   WorkGroup group(String id)=>groups.firstWhere((g)=>g.id==id);
   CrewTeam team(String id)=>teams.firstWhere((t)=>t.id==id);
@@ -141,13 +179,13 @@ class AppStore extends ChangeNotifier {
   void seed(){
     people..clear()..addAll([
       Person(id:'admin',name:'Cytech Administrator',username:'admin',isAdmin:true),
-      Person(id:'ayesha',name:'Ayesha Rahman',username:'ayesha'),
-      Person(id:'fahim',name:'Fahim Ahmed',username:'fahim'),
-      Person(id:'nabila',name:'Nabila Islam',username:'nabila'),
-      Person(id:'rafi',name:'Rafi Hasan',username:'rafi'),
-      Person(id:'tanvir',name:'Tanvir Khan',username:'tanvir'),
-      Person(id:'sadia',name:'Sadia Noor',username:'sadia'),
-      Person(id:'imran',name:'Imran Hossain',username:'imran'),
+      Person(id:'ayesha',name:'Ayesha Rahman',username:'ayesha',hourlyRate:350),
+      Person(id:'fahim',name:'Fahim Ahmed',username:'fahim',hourlyRate:300),
+      Person(id:'nabila',name:'Nabila Islam',username:'nabila',hourlyRate:310),
+      Person(id:'rafi',name:'Rafi Hasan',username:'rafi',hourlyRate:220),
+      Person(id:'tanvir',name:'Tanvir Khan',username:'tanvir',hourlyRate:235),
+      Person(id:'sadia',name:'Sadia Noor',username:'sadia',hourlyRate:255),
+      Person(id:'imran',name:'Imran Hossain',username:'imran',hourlyRate:290),
     ]);
     teams..clear()..addAll([
       CrewTeam(id:'team-1',name:'Site Operations',description:'Daily deployment and field operations',memberIds:['ayesha','fahim','nabila','rafi']),
@@ -173,8 +211,11 @@ class AppStore extends ChangeNotifier {
       GroupEvent(id:'ev3',groupId:'group-1',kind:'attendance',authorId:'ayesha',text:'Attendance notice for today',timestamp:'2026-11-13T09:00:00',referenceId:'att-1'),
       GroupEvent(id:'ev4',groupId:'group-1',kind:'complaint',authorId:'fahim',text:'The safety equipment needs replacement before the next shift.',timestamp:'2026-11-13T09:18:00',referenceId:'cmp-1'),
     ]);
-    attendance..clear()..add(AttendanceReport(id:'att-1',groupId:'group-1',date:'2026-11-13',authorId:'ayesha',createdAt:'2026-11-13T09:00:00',present:{'ayesha':true,'fahim':true,'nabila':true,'rafi':false}));
+    attendance..clear()..add(AttendanceReport(id:'att-1',groupId:'group-1',date:'2026-11-13',authorId:'ayesha',createdAt:'2026-11-13T09:00:00',present:{'ayesha':true,'fahim':true,'nabila':true,'rafi':false},
+      hours:{'ayesha':9,'fahim':8,'nabila':10,'rafi':0},
+      rateSnapshot:{'ayesha':350,'fahim':300,'nabila':310,'rafi':220}));
     complaints..clear()..add(GroupComplaint(id:'cmp-1',groupId:'group-1',authorId:'fahim',text:'The safety equipment needs replacement before the next shift.',status:'Open',createdAt:'2026-11-13T09:18:00'));
+    workNotices..clear()..add(WorkNotice(id:'work-1',authorId:'ayesha',company:'Cytech Engineering',location:'North Industrial Plant',date:'2026-11-16',reportingTime:'08:00',memberIds:['fahim','rafi'],createdAt:'2026-11-13T10:10:00',instructions:'Bring safety equipment and report to the site supervisor.'));
   }
   void _load(Map<String,dynamic> m){
     List<T> parse<T>(String key,T Function(Map<String,dynamic>) f)=>
@@ -185,6 +226,8 @@ class AppStore extends ChangeNotifier {
     events..clear()..addAll(parse('events',GroupEvent.fromJson));
     attendance..clear()..addAll(parse('attendance',AttendanceReport.fromJson));
     complaints..clear()..addAll(parse('complaints',GroupComplaint.fromJson));
+    workNotices..clear()..addAll(parse('workNotices',WorkNotice.fromJson));
+    overtimeMultiplier=(m['overtimeMultiplier'] as num?)?.toDouble()??1.0;
     if(people.isEmpty)seed();
   }
   Map<String,dynamic> _toJson()=>{
@@ -194,6 +237,8 @@ class AppStore extends ChangeNotifier {
     'events':events.map((x)=>x.toJson()).toList(),
     'attendance':attendance.map((x)=>x.toJson()).toList(),
     'complaints':complaints.map((x)=>x.toJson()).toList(),
+    'workNotices':workNotices.map((x)=>x.toJson()).toList(),
+    'overtimeMultiplier':overtimeMultiplier,
   };
   void changed(){
     notifyListeners();
@@ -257,11 +302,19 @@ class AppStore extends ChangeNotifier {
     events.add(GroupEvent(id:newId(),groupId:groupId,kind:'chat',authorId:currentUserId,
       text:text.trim(),timestamp:DateTime.now().toIso8601String()));changed();
   }
-  void postAttendance(String groupId,DateTime date,Map<String,bool> status){
+  void postAttendance(String groupId,DateTime date,Map<String,bool> status,{Map<String,double>? hours}){
     final g=group(groupId);if(!canPublish(g)||status.isEmpty)return;
+    final cleanHours=<String,double>{};
+    for(final item in status.entries){
+      final h=item.value?(hours?[item.key]??8).clamp(0,24).toDouble():0.0;
+      if(!h.isFinite)throw ArgumentError('Working hours must be finite');
+      cleanHours[item.key]=h;
+    }
     final now=DateTime.now().toIso8601String(),id=newId();
     attendance.insert(0,AttendanceReport(id:id,groupId:groupId,date:dayKey(date),
-      authorId:currentUserId,createdAt:now,present:Map.of(status)));
+      authorId:currentUserId,createdAt:now,present:Map.of(status),
+      hours:cleanHours,rateSnapshot:{for(final personId in status.keys)personId:person(personId).hourlyRate},
+      otMultiplier:overtimeMultiplier));
     events.add(GroupEvent(id:'event-'+id,groupId:groupId,kind:'attendance',
       authorId:currentUserId,text:'Official attendance report',timestamp:now,referenceId:id));changed();
   }
@@ -273,6 +326,45 @@ class AppStore extends ChangeNotifier {
     events.add(GroupEvent(id:'event-'+id,groupId:groupId,kind:'complaint',
       authorId:currentUserId,text:text.trim(),timestamp:now,referenceId:id));changed();
   }
+
+  String registerWorker({required String name,required String username,required double hourlyRate}){
+    if(!isAdmin)throw StateError('Admin only');
+    if(name.trim().isEmpty||username.trim().isEmpty)throw ArgumentError('Worker name and username required');
+    if(!hourlyRate.isFinite||hourlyRate<0||hourlyRate>1000000)throw ArgumentError('Hourly rate out of range');
+    if(people.any((p)=>p.username.toLowerCase()==username.trim().toLowerCase()))throw StateError('Username already exists');
+    final id='worker-'+newId();
+    people.add(Person(id:id,name:name.trim(),username:username.trim().toLowerCase(),hourlyRate:hourlyRate));
+    changed();return id;
+  }
+  void setWorkerRate(String id,{required String name,required String username,required double rate}){
+    if(!isAdmin)throw StateError('Admin only');
+    if(name.trim().isEmpty||username.trim().isEmpty)throw ArgumentError('Worker name and username required');
+    if(!rate.isFinite||rate<0||rate>1000000)throw ArgumentError('Hourly rate out of range');
+    if(people.any((p)=>p.id!=id&&p.username.toLowerCase()==username.trim().toLowerCase()))throw StateError('Username already exists');
+    final i=people.indexWhere((p)=>p.id==id&& !p.isAdmin);
+    if(i<0)throw StateError('Worker not found');
+    people[i]=Person(id:id,name:name.trim(),username:username.trim().toLowerCase(),hourlyRate:rate);
+    changed();
+  }
+  void setOvertimeMultiplier(double value){
+    if(!isAdmin)throw StateError('Admin only');
+    if(![1.0,1.5,2.0].contains(value))throw ArgumentError('Unsupported overtime rate');
+    overtimeMultiplier=value;changed();
+  }
+  void createWorkNotice({required String company,required String location,required DateTime date,
+    required String reportingTime,required List<String> memberIds,String instructions=''}){
+    if(!canPublishWorkNotice)throw StateError('Supervisor or Admin only');
+    if(company.trim().isEmpty||location.trim().isEmpty||reportingTime.trim().isEmpty||memberIds.isEmpty){
+      throw ArgumentError('Company, location, reporting time and selected members required');
+    }
+    if(memberIds.any((id)=>!allTeamMemberIds.contains(id)))throw StateError('Workers must be registered team members');
+    workNotices.insert(0,WorkNotice(id:newId(),authorId:currentUserId,company:company.trim(),
+      location:location.trim(),date:dayKey(date),reportingTime:reportingTime,
+      memberIds:memberIds.toSet().toList(),createdAt:DateTime.now().toIso8601String(),
+      instructions:instructions.trim()));
+    changed();
+  }
+
   void setComplaintStatus(String groupId,String id,String status){
     if(!canReview(group(groupId)))return;
     final i=complaints.indexWhere((c)=>c.id==id&&c.groupId==groupId);
