@@ -3,6 +3,8 @@ import '../core/app_store.dart';
 import '../core/cytech_theme.dart';
 import 'management_pages.dart';
 import 'group_room.dart';
+import 'public_notices.dart';
+import 'accounts_page.dart';
 
 void pushPage(BuildContext context,Widget page){
   Navigator.push(context,MaterialPageRoute(builder:(_)=>page));
@@ -18,51 +20,71 @@ class _MainShellState extends State<MainShell>{
   @override void dispose(){searchController.dispose();super.dispose();}
   AppStore get store=>widget.store;
   @override Widget build(BuildContext context)=>AnimatedBuilder(animation:store,builder:(context,_){
-    final titles=['Workspace','Teams','Groups','Profile'];
+    final titles=['Workspace','Groups','Public Notices','Teams',
+      store.isAdmin?'Accounts':'Profile'];
     return Scaffold(
+      extendBody:true,
       body:SafeArea(child:Column(children:[
-        if(tab!=0)Container(color:cyCanvas,padding:const EdgeInsets.fromLTRB(20,17,20,14),
+        if(tab!=0)Container(color:cyCanvas,padding:const EdgeInsets.fromLTRB(19,17,19,11),
           child:Row(children:[
             Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
               const Text('CYTECH / OPERATIONS',style:TextStyle(color:cyOrange,
                 fontSize:9,letterSpacing:1.4,fontWeight:FontWeight.w900)),
-              const SizedBox(height:4),
+              const SizedBox(height:5),
               Text(titles[tab],style:const TextStyle(fontWeight:FontWeight.w900,
-                color:cyNavy,fontSize:26,letterSpacing:-1)),
+                color:cyNavy,fontSize:25,letterSpacing:-1)),
             ])),
-            if(store.isAdmin&&(tab==1||tab==2))
-              IconButton.filled(onPressed:()=>tab==1?
+            if(store.isAdmin&&(tab==1||tab==3))
+              IconButton.filled(onPressed:()=>tab==3?
                 pushPage(context,TeamEditor(store:store)):
                 pushPage(context,GroupEditor(store:store)),
                 style:IconButton.styleFrom(backgroundColor:cyOrange),
                 icon:const Icon(Icons.add_rounded,color:Colors.white)),
-            if(tab==3)const BrandMark(size:33),
+            if(tab==4)const BrandMark(size:30),
           ])),
         Expanded(child:IndexedStack(index:tab,children:[
           _dashboard(),
-          _teams(),
           _groups(),
-          _profile(),
+          WorkNoticeCenter(store:store),
+          _teams(),
+          store.isAdmin?AccountsCenter(store:store):_profile(),
         ])),
       ])),
-      bottomNavigationBar:NavigationBar(
-        backgroundColor:Colors.white,surfaceTintColor:Colors.white,
-        height:72,indicatorColor:cyOrangeSoft,
-        selectedIndex:tab,onDestinationSelected:(index)=>setState(()=>tab=index),
-        labelTextStyle:WidgetStateProperty.resolveWith((states)=>TextStyle(
-          fontSize:11,fontWeight:FontWeight.w800,
-          color:states.contains(WidgetState.selected)?cyOrange:cyMuted)),
-        destinations:const [
-          NavigationDestination(icon:Icon(Icons.space_dashboard_outlined),
-            selectedIcon:Icon(Icons.space_dashboard_rounded,color:cyOrange),label:'Home'),
-          NavigationDestination(icon:Icon(Icons.groups_outlined),
-            selectedIcon:Icon(Icons.groups_rounded,color:cyOrange),label:'Teams'),
-          NavigationDestination(icon:Icon(Icons.forum_outlined),
-            selectedIcon:Icon(Icons.forum_rounded,color:cyOrange),label:'Groups'),
-          NavigationDestination(icon:Icon(Icons.person_outline_rounded),
-            selectedIcon:Icon(Icons.person_rounded,color:cyOrange),label:'Profile'),
-        ],
-      ),
+      bottomNavigationBar:SafeArea(top:false,child:Container(
+        margin:const EdgeInsets.fromLTRB(13,0,13,9),
+        padding:const EdgeInsets.symmetric(horizontal:7,vertical:7),
+        decoration:BoxDecoration(color:cyNavy,
+          borderRadius:BorderRadius.circular(23),
+          border:Border.all(color:const Color(0xFF24445C),width:1),
+          boxShadow:const [BoxShadow(color:Color(0x36051B2E),blurRadius:20,offset:Offset(0,9))]),
+        child:Row(children:[
+          for(final item in <(String,IconData)>[
+            ('Home',Icons.space_dashboard_rounded),
+            ('Groups',Icons.forum_rounded),
+            ('Notices',Icons.campaign_rounded),
+            ('Teams',Icons.groups_rounded),
+            (store.isAdmin?'Accounts':'Profile',
+              store.isAdmin?Icons.account_balance_wallet_rounded:Icons.person_rounded)
+          ].asMap().entries)Expanded(child:InkWell(
+            key:Key('dock_'+item.key.toString()),
+            borderRadius:BorderRadius.circular(16),
+            onTap:()=>setState(()=>tab=item.key),
+            child:AnimatedContainer(duration:const Duration(milliseconds:200),
+              padding:const EdgeInsets.symmetric(vertical:8,horizontal:2),
+              decoration:BoxDecoration(
+                color:tab==item.key?cyOrange:Colors.transparent,
+                borderRadius:BorderRadius.circular(15)),
+              child:Column(mainAxisSize:MainAxisSize.min,children:[
+                Icon(item.value.$2,size:19,
+                  color:tab==item.key?Colors.white:const Color(0xFF91A7B8)),
+                const SizedBox(height:5),
+                FittedBox(fit:BoxFit.scaleDown,
+                  child:Text(item.value.$1,style:TextStyle(
+                    fontSize:9,fontWeight:FontWeight.w900,
+                    color:tab==item.key?Colors.white:const Color(0xFF9AB1C2)))),
+              ]))))
+        ]),
+      )),
     );
   });
 
@@ -79,7 +101,10 @@ class _MainShellState extends State<MainShell>{
           crossAxisAlignment:CrossAxisAlignment.start,children:[
           Row(children:[
             const BrandLockup(dark:true,compact:true),const Spacer(),
-            InkWell(onTap:()=>setState(()=>tab=3),child:PersonAvatar(store.me,size:40)),
+            InkWell(onTap:()=>store.isAdmin?Navigator.push(context,MaterialPageRoute(
+              builder:(_)=>Scaffold(appBar:AppBar(title:const Text('Profile')),
+                body:SafeArea(child:_profile())))):setState(()=>tab=4),
+              child:PersonAvatar(store.me,size:40)),
           ]),
           const SizedBox(height:27),
           Text('HELLO, '+(store.isAdmin?'ADMIN':store.me.name.split(' ').first.toUpperCase()),
@@ -111,11 +136,11 @@ class _MainShellState extends State<MainShell>{
           Row(children:[
             Expanded(child:_shortcut(
               icon:Icons.forum_rounded,title:'Group workspace',subtitle:'Chat & notices',
-              orange:true,onTap:()=>setState(()=>tab=2))),
+              orange:true,onTap:()=>setState(()=>tab=1))),
             const SizedBox(width:11),
             Expanded(child:_shortcut(
               icon:Icons.groups_2_outlined,title:'Manage teams',subtitle:'Members & roles',
-              onTap:()=>setState(()=>tab=1))),
+              onTap:()=>setState(()=>tab=3))),
           ]),
           if(store.isAdmin)...[
             const SizedBox(height:10),
@@ -129,12 +154,12 @@ class _MainShellState extends State<MainShell>{
                 onTap:()=>pushPage(context,TeamEditor(store:store)))),
             ]),
           ],
-          SectionTitle('Active workspaces',action:'VIEW ALL',onTap:()=>setState(()=>tab=2)),
+          SectionTitle('Active workspaces',action:'VIEW ALL',onTap:()=>setState(()=>tab=1)),
           if(groups.isEmpty)const EmptyPanel(title:'No groups yet',
             message:'An admin can create a group and assign you to it.',icon:Icons.forum_outlined),
           for(final g in groups.take(3))Padding(padding:const EdgeInsets.only(bottom:9),
             child:_groupCard(g)),
-          SectionTitle('Latest operational updates',action:'GROUPS',onTap:()=>setState(()=>tab=2)),
+          SectionTitle('Latest operational updates',action:'GROUPS',onTap:()=>setState(()=>tab=1)),
           _updates(groups),
           const SizedBox(height:10),
           const InfoBanner('Offline preview: your changes are saved only on this Android device. '
