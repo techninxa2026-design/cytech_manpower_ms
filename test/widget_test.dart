@@ -5,6 +5,10 @@ import 'package:cytech_mms/main.dart';
 import 'package:cytech_mms/core/app_store.dart';
 import 'package:cytech_mms/core/cytech_theme.dart';
 import 'package:cytech_mms/screens/group_room.dart';
+import 'package:cytech_mms/core/payroll.dart';
+import 'package:cytech_mms/core/payroll_pdf.dart';
+import 'package:cytech_mms/screens/public_notices.dart';
+import 'package:cytech_mms/screens/accounts_page.dart';
 
 void main(){
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -79,5 +83,80 @@ void main(){
     await tester.tap(find.byKey(const Key('send_chat')));
     await tester.pump();
     expect(store.groupEvents('group-1').last.text,'QA chat message from engineer');
+  });
+
+  test('payroll uses hours, OT and published rate snapshots',()async{
+    final store=AppStore();await store.initialize();
+    store.enter(username:'admin');
+    store.setOvertimeMultiplier(1.5);
+    store.postAttendance('group-1',DateTime(2026,11,14),{'fahim':true,'rafi':false},
+      hours:{'fahim':9,'rafi':0});
+    final before=PayrollEngine.month(store,DateTime(2026,11));
+    final fahim=before.workers.firstWhere((r)=>r.person.id=='fahim');
+    final shift=fahim.lines.firstWhere((l)=>l.date=='2026-11-14');
+    expect(shift.regularHours,8);
+    expect(shift.overtimeHours,1);
+    expect(shift.regularPay,2400);
+    expect(shift.overtimePay,450);
+    expect(shift.gross,2850);
+    store.setWorkerRate('fahim',name:'Fahim Ahmed',username:'fahim',rate:450);
+    final after=PayrollEngine.month(store,DateTime(2026,11));
+    final historic=after.workers.firstWhere((r)=>r.person.id=='fahim')
+      .lines.firstWhere((l)=>l.date=='2026-11-14');
+    expect(historic.rate,300);
+    expect(historic.gross,2850);
+    // Another report for the same group/date replaces the first payroll entry.
+    store.postAttendance('group-1',DateTime(2026,11,14),{'fahim':true},
+      hours:{'fahim':8});
+    final current=PayrollEngine.month(store,DateTime(2026,11))
+      .workers.firstWhere((r)=>r.person.id=='fahim');
+    expect(current.lines.where((l)=>l.date=='2026-11-14').length,1);
+    expect(current.lines.firstWhere((l)=>l.date=='2026-11-14').gross,3600);
+  });
+
+  test('public work notices are supervisor-created and member-filtered',()async{
+    final store=AppStore();await store.initialize();
+    store.enter(username:'ayesha');
+    expect(store.canPublishWorkNotice,isTrue);
+    store.createWorkNotice(company:'Demo Engineering Ltd',location:'Site South',
+      date:DateTime(2026,12,1),reportingTime:'07:30',
+      memberIds:['fahim','tanvir'],instructions:'Report to gate 3');
+    store.demoAs('fahim');
+    expect(store.canPublishWorkNotice,isTrue); // Supervisor of Warehouse group.
+    expect(store.visibleWorkNotices.any((n)=>n.company=='Demo Engineering Ltd'),isTrue);
+    store.demoAs('rafi');
+    expect(store.canPublishWorkNotice,isFalse);
+    expect(store.visibleWorkNotices.any((n)=>n.company=='Demo Engineering Ltd'),isFalse);
+    expect(()=>store.createWorkNotice(company:'Restricted',location:'Site',
+      date:DateTime(2026,12,1),reportingTime:'08:00',memberIds:['fahim']),
+      throwsStateError);
+  });
+
+  test('admin worker registration and payroll PDF are available offline',()async{
+    final store=AppStore();await store.initialize();
+    store.enter(username:'admin');
+    final id=store.registerWorker(name:'New Worker',username:'newworker',hourlyRate:250);
+    expect(store.person(id).hourlyRate,250);
+    store.saveTeam(name:'New Team',description:'Shift',members:[id]);
+    expect(store.allTeamMemberIds,contains(id));
+    final pdf=await PayrollPdf.build(store,PayrollEngine.month(store,DateTime(2026,11)));
+    expect(pdf.length,greaterThan(700));
+    // The app cannot expose admin PDF from non-admin demo personas.
+    store.demoAs('rafi');
+    expect(()=>store.setWorkerRate(id,name:'New Worker',username:'newworker',rate:100),
+      throwsStateError);
+  });
+
+  testWidgets('polished admin dock exposes accounts and public notices',(tester)async{
+    final store=AppStore();await store.initialize();store.enter(username:'admin');
+    await tester.pumpWidget(MyApp(store:store));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('dock_4')),findsOneWidget);
+    await tester.tap(find.byKey(const Key('dock_4')));
+    await tester.pumpAndSettle();
+    expect(find.text('Monthly earnings'),findsOneWidget);
+    await tester.tap(find.byKey(const Key('dock_2')));
+    await tester.pumpAndSettle();
+    expect(find.text('Published notices'),findsOneWidget);
   });
 }
