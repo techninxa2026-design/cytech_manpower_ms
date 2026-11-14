@@ -375,6 +375,7 @@ class _MainShellState extends State<MainShell>{
     ])Padding(padding:const EdgeInsets.only(bottom:8),
       child:CyCard(onTap:(){
         store.demoAs(entry.$1);
+        Navigator.of(context).popUntil((route)=>route.isFirst);
         setState(()=>tab=0);
         toast(context,'Previewing as '+entry.$2);
       },child:Row(children:[
@@ -399,7 +400,10 @@ class _MainShellState extends State<MainShell>{
       ListTile(contentPadding:EdgeInsets.zero,
         leading:const Icon(Icons.logout_rounded,color:cyOrange),
         title:const Text('Sign out',style:TextStyle(fontWeight:FontWeight.w800)),
-        onTap:store.signOut),
+        onTap:(){
+          Navigator.of(context).popUntil((route)=>route.isFirst);
+          store.signOut();
+        }),
     ])),
   ]);
 }
