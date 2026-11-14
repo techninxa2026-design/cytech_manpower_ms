@@ -7,8 +7,6 @@ import 'package:cytech_mms/core/cytech_theme.dart';
 import 'package:cytech_mms/screens/group_room.dart';
 import 'package:cytech_mms/core/payroll.dart';
 import 'package:cytech_mms/core/payroll_pdf.dart';
-import 'package:cytech_mms/screens/public_notices.dart';
-import 'package:cytech_mms/screens/accounts_page.dart';
 
 void main(){
   TestWidgetsFlutterBinding.ensureInitialized();
