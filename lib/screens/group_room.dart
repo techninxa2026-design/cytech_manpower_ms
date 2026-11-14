@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../core/app_store.dart';
 import '../core/cytech_theme.dart';
 import 'management_pages.dart';
+import '../core/payroll.dart';
 
 class GroupRoom extends StatefulWidget{
   const GroupRoom({super.key,required this.store,required this.groupId,this.initialTab=0});
@@ -162,19 +163,6 @@ class _GroupRoomState extends State<GroupRoom>{
           'complaint'=>_complaintEvent(event),
           _=>_chatEvent(event),
         }),
-      if(s.canPublish(g)||s.canComplain(g))...[
-        const SizedBox(height:10),
-        Wrap(spacing:8,runSpacing:8,children:[
-          if(s.canPublish(g))ActionChip(
-            avatar:const Icon(Icons.fact_check_outlined,size:16,color:cyOrange),
-            label:const Text('Publish attendance',style:TextStyle(fontSize:11)),
-            onPressed:()=>navigate(AttendanceEditor(store:s,groupId:g.id))),
-          if(s.canComplain(g))ActionChip(
-            avatar:const Icon(Icons.report_problem_outlined,size:16,color:cyPurple),
-            label:const Text('Raise a complaint',style:TextStyle(fontSize:11)),
-            onPressed:()=>navigate(ComplaintEditor(store:s,groupId:g.id))),
-        ]),
-      ],
     ]);
   }
   Widget _chatEvent(GroupEvent e){
@@ -280,6 +268,16 @@ class _GroupRoomState extends State<GroupRoom>{
             const Color(0xFFBE4242),const Color(0xFFFFECEB))),
         ]),
         const SizedBox(height:12),
+        Container(padding:const EdgeInsets.symmetric(horizontal:12,vertical:10),
+          decoration:BoxDecoration(color:Colors.white,borderRadius:BorderRadius.circular(11)),
+          child:Row(children:[
+            const Icon(Icons.schedule_rounded,color:cyOrange,size:17),
+            const SizedBox(width:7),
+            Expanded(child:Text(hourLabel(n.totalHours)+'h worked · '+
+              hourLabel(n.totalOvertime)+'h overtime',style:const TextStyle(
+              color:cyNavy,fontSize:11,fontWeight:FontWeight.w900))),
+          ])),
+        const SizedBox(height:12),
         Text('Published by '+s.person(n.authorId).name,
           style:const TextStyle(color:cyMuted,fontSize:10)),
         const SizedBox(height:10),
@@ -301,25 +299,46 @@ class _GroupRoomState extends State<GroupRoom>{
     ]));
   void _showReport(AttendanceReport n){
     showModalBottomSheet(context:context,isScrollControlled:true,showDragHandle:true,
-      backgroundColor:cyCanvas,builder:(ctx)=>SafeArea(child:Padding(
-        padding:const EdgeInsets.fromLTRB(19,5,19,20),child:Column(
-        mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[
+      backgroundColor:cyCanvas,builder:(ctx)=>SafeArea(child:FractionallySizedBox(
+        heightFactor:.78,child:ListView(padding:const EdgeInsets.fromLTRB(19,5,19,24),children:[
           const Text('OFFICIAL ATTENDANCE',style:TextStyle(color:cyOrange,fontSize:10,
             fontWeight:FontWeight.w900,letterSpacing:1.5)),
           const SizedBox(height:7),
           Text(n.date,style:const TextStyle(fontWeight:FontWeight.w900,fontSize:24,color:cyNavy)),
-          const SizedBox(height:12),
-          Flexible(child:ListView(shrinkWrap:true,children:[
-            for(final entry in n.present.entries)Padding(padding:const EdgeInsets.only(bottom:7),
-              child:CyCard(child:Row(children:[
+          const SizedBox(height:11),
+          InfoBanner(hourLabel(n.totalHours)+' hours worked · '+hourLabel(n.totalOvertime)+
+            ' hours overtime across '+n.presentCount.toString()+' present members',
+            icon:Icons.schedule_rounded,color:cyOrange),
+          const SizedBox(height:15),
+          for(final entry in n.present.entries)Padding(padding:const EdgeInsets.only(bottom:9),
+            child:CyCard(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+              Row(children:[
                 PersonAvatar(widget.store.person(entry.key)),const SizedBox(width:11),
                 Expanded(child:Text(widget.store.person(entry.key).name,
-                  style:const TextStyle(color:cyNavy,fontSize:12,fontWeight:FontWeight.w800))),
+                  style:const TextStyle(color:cyNavy,fontSize:12,fontWeight:FontWeight.w900))),
                 StatusPill(entry.value?'PRESENT':'ABSENT',
                   tint:entry.value?const Color(0xFF138457):const Color(0xFFB63D3D),
                   background:entry.value?const Color(0xFFE7F8EF):const Color(0xFFFFECEB)),
-              ]))),
-          ])),
+              ]),
+              const Divider(height:20),
+              Row(children:[
+                const Icon(Icons.access_time_rounded,color:cyOrange,size:16),
+                const SizedBox(width:7),
+                Text(hourLabel(n.hoursFor(entry.key))+' hours worked',
+                  style:const TextStyle(color:cyNavy,fontWeight:FontWeight.w900,fontSize:11)),
+                const Spacer(),
+                if(entry.value&&n.hoursFor(entry.key)>=8)
+                  const StatusPill('1 DAY',background:Color(0xFFE7F8EF),
+                    tint:Color(0xFF138457)),
+                if(!entry.value)const StatusPill('0 HOURS'),
+                if(entry.value&&n.hoursFor(entry.key)<8)
+                  const StatusPill('PARTIAL DAY'),
+              ]),
+              if(n.overtimeFor(entry.key)>0)Padding(
+                padding:const EdgeInsets.only(top:10),
+                child:StatusPill('+'+hourLabel(n.overtimeFor(entry.key))+'h OVERTIME',
+                  icon:Icons.bolt_rounded)),
+            ]))),
         ]))));
   }
   Widget _issues(List<GroupComplaint> issues,WorkGroup g){
@@ -496,9 +515,17 @@ class AttendanceEditor extends StatefulWidget{
 class _AttendanceEditorState extends State<AttendanceEditor>{
   DateTime date=DateTime.now();
   late final Map<String,bool> status;
+  late final Map<String,double> hours;
   @override void initState(){
     super.initState();
     status={for(final m in widget.store.group(widget.groupId).members)m.personId:true};
+    hours={for(final id in status.keys)id:8.0};
+  }
+  String shiftDisplay(String id){
+    if(!(status[id]??false))return 'Absent · 0 hours';
+    final h=hours[id]??8.0;
+    if(h>=8){return '1 day'+(h>8?' + '+hourLabel(h-8)+'h OT':'');}
+    return hourLabel(h)+'h · partial day';
   }
   @override Widget build(BuildContext context){
     final g=widget.store.group(widget.groupId);
@@ -550,32 +577,63 @@ class _AttendanceEditorState extends State<AttendanceEditor>{
         if(status.isEmpty)const EmptyPanel(title:'No group members',
           message:'Ask the admin to assign group members first.'),
         for(final id in status.keys)Padding(padding:const EdgeInsets.only(bottom:9),
-          child:CyCard(child:Row(children:[
-            PersonAvatar(widget.store.person(id)),const SizedBox(width:10),
-            Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-              Text(widget.store.person(id).name,style:const TextStyle(
-                color:cyNavy,fontWeight:FontWeight.w900,fontSize:12)),
-              Text(g.roleOf(id).toUpperCase(),style:const TextStyle(
-                color:cyMuted,fontSize:9,fontWeight:FontWeight.w800))
-            ])),
-            SegmentedButton<bool>(showSelectedIcon:false,
-              style:ButtonStyle(visualDensity:VisualDensity.compact,
-                padding:const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal:7))),
-              segments:const [
-                ButtonSegment(value:true,label:Text('P',style:TextStyle(fontSize:11))),
-                ButtonSegment(value:false,label:Text('A',style:TextStyle(fontSize:11)))
-              ],selected:{status[id]!},onSelectionChanged:(v)=>
-                setState(()=>status[id]=v.first))
+          child:CyCard(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+            Row(children:[
+              PersonAvatar(widget.store.person(id)),const SizedBox(width:10),
+              Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                Text(widget.store.person(id).name,style:const TextStyle(
+                  color:cyNavy,fontWeight:FontWeight.w900,fontSize:12)),
+                Text(g.roleOf(id).toUpperCase(),style:const TextStyle(
+                  color:cyMuted,fontSize:9,fontWeight:FontWeight.w900))
+              ])),
+              SegmentedButton<bool>(showSelectedIcon:false,
+                style:ButtonStyle(visualDensity:VisualDensity.compact,
+                  padding:const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal:6))),
+                segments:const [
+                  ButtonSegment(value:true,label:Text('P',style:TextStyle(fontSize:11))),
+                  ButtonSegment(value:false,label:Text('A',style:TextStyle(fontSize:11)))
+                ],selected:{status[id]!},
+                onSelectionChanged:(v)=>setState(()=>status[id]=v.first)),
+            ]),
+            if(status[id]??false)...[
+              const Divider(height:21),
+              Row(children:[
+                const Icon(Icons.schedule_rounded,color:cyOrange,size:17),
+                const SizedBox(width:7),
+                const Expanded(child:Text('HOURS WORKED',style:TextStyle(
+                  color:cyMuted,fontSize:10,fontWeight:FontWeight.w900))),
+                IconButton(key:Key('hours_minus_'+id),
+                  onPressed:()=>setState(()=>hours[id]=((hours[id]??8)-.5).clamp(0.0,24.0).toDouble()),
+                  visualDensity:VisualDensity.compact,
+                  icon:const Icon(Icons.remove_circle_outline_rounded,color:cyOrange)),
+                Text(hourLabel(hours[id]??8)+' h',key:Key('hours_value_'+id),
+                  style:const TextStyle(color:cyNavy,fontSize:14,fontWeight:FontWeight.w900)),
+                IconButton(key:Key('hours_plus_'+id),
+                  onPressed:()=>setState(()=>hours[id]=((hours[id]??8)+.5).clamp(0.0,24.0).toDouble()),
+                  visualDensity:VisualDensity.compact,
+                  icon:const Icon(Icons.add_circle_rounded,color:cyOrange)),
+              ]),
+              Container(padding:const EdgeInsets.symmetric(horizontal:10,vertical:7),
+                decoration:BoxDecoration(color:cyOrangeSoft,borderRadius:BorderRadius.circular(9)),
+                child:Row(children:[
+                  const Icon(Icons.verified_rounded,color:cyOrange,size:14),
+                  const SizedBox(width:6),
+                  Text(shiftDisplay(id),style:const TextStyle(
+                    color:cyOrange,fontSize:10,fontWeight:FontWeight.w900)),
+                ])),
+            ]else const Padding(padding:EdgeInsets.only(top:8),
+              child:StatusPill('ABSENT · 0 HOURS',
+                tint:Color(0xFFB63D3D),background:Color(0xFFFFECEB))),
           ]))),
         const SizedBox(height:12),
-        const InfoBanner('Publishing creates a prominent attendance notice in the group chat '
-          'and the Notices tab. Every assigned member can read it.',color:cyOrange),
+        const InfoBanner('8 hours = 1 regular day. Hours over 8 are recorded as overtime. '
+          'Publishing saves current worker wage rates and OT policy for historical payroll.',color:cyOrange),
       ])),
       Container(color:Colors.white,padding:const EdgeInsets.fromLTRB(19,12,19,16),
         child:SizedBox(width:double.infinity,child:FilledButton.icon(
           key:const Key('publish_attendance'),
           onPressed:status.isEmpty?null:(){
-            widget.store.postAttendance(widget.groupId,date,status);
+            widget.store.postAttendance(widget.groupId,date,status,hours:hours);
             Navigator.pop(context);
           },
           icon:const Icon(Icons.campaign_rounded),
