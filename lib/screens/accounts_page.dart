@@ -223,7 +223,7 @@ class _AccountsCenterState extends State<AccountsCenter>{
           FittedBox(fit:BoxFit.scaleDown,child:Text(title,
             style:TextStyle(fontSize:11,fontWeight:FontWeight.w900,
               color:selected?Colors.white:cyMuted))),
-        ]))));
+        ])));
   }
   Widget _metric(String title,String value,IconData icon)=>CyCard(
     child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
