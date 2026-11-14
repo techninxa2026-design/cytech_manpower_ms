@@ -152,9 +152,9 @@ void main(){
     expect(find.byKey(const Key('dock_4')),findsOneWidget);
     await tester.tap(find.byKey(const Key('dock_4')));
     await tester.pumpAndSettle();
-    expect(find.text('Monthly earnings'),findsOneWidget);
+    expect(find.text('Every hour.\nEvery taka.'),findsOneWidget);
     await tester.tap(find.byKey(const Key('dock_2')));
     await tester.pumpAndSettle();
-    expect(find.text('Published notices'),findsOneWidget);
+    expect(find.text('Know where.\nKnow when.'),findsOneWidget);
   });
 }
