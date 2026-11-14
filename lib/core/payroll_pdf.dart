@@ -31,7 +31,7 @@ class PayrollPdf {
           pw.Text(monthLabel(data.month),style:bold)
         ])),
       footer:(context)=>pw.Row(mainAxisAlignment:pw.MainAxisAlignment.spaceBetween,children:[
-        pw.Text('Locally generated demonstration report  •  BDT',style:pw.TextStyle(fontSize:7,color:muted)),
+        pw.Text('Locally generated demonstration report - BDT',style:pw.TextStyle(fontSize:7,color:muted)),
         pw.Text('Page '+context.pageNumber.toString()+' / '+context.pagesCount.toString(),
           style:pw.TextStyle(fontSize:7,color:muted)),
       ]),
@@ -86,12 +86,12 @@ class PayrollPdf {
         pw.SizedBox(height:11),
         pw.Text('Accounting notes',style:bold),
         pw.SizedBox(height:6),
-        pw.Text('• Standard hours: first 8 hours of each shift. Overtime: hours above 8.\n'
-          '• OT premium is captured at attendance publication (default 1.0x).\n'
-          '• Historical rate snapshots are used for published reports.\n'
-          '• Latest published attendance for the same group and date wins.\n'
-          '• Separate group assignments on one date are counted separately.\n'
-          '• This is an offline gross wages calculation, not a statutory payslip or proof of payment.',
+        pw.Text('- Standard hours: first 8 hours of each shift. Overtime: hours above 8.\n'
+          '- OT premium is captured at attendance publication (default 1.0x).\n'
+          '- Historical rate snapshots are used for published reports.\n'
+          '- Latest published attendance for the same group and date wins.\n'
+          '- Separate group assignments on one date are counted separately.\n'
+          '- This is an offline gross wages calculation, not a statutory payslip or proof of payment.',
           style:pw.TextStyle(fontSize:8,color:muted,height:1.6)),
       ],
     ));
