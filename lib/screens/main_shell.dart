@@ -5,6 +5,7 @@ import 'management_pages.dart';
 import 'group_room.dart';
 import 'public_notices.dart';
 import 'accounts_page.dart';
+import 'attendance_records.dart';
 
 void pushPage(BuildContext context,Widget page){
   Navigator.push(context,MaterialPageRoute(builder:(_)=>page));
@@ -21,17 +22,18 @@ class _MainShellState extends State<MainShell>{
   AppStore get store=>widget.store;
   @override Widget build(BuildContext context)=>AnimatedBuilder(animation:store,builder:(context,_){
     final titles=['Workspace','Groups','Public Notices','Teams',
-      store.isAdmin?'Accounts':'Profile'];
+      store.isAdmin?'Accounts':'Profile',if(store.isAdmin)'Attendance Records'];
+    final activeTab=tab>=titles.length?0:tab;
     return Scaffold(
       extendBody:true,
       body:SafeArea(child:Column(children:[
-        if(tab!=0)Container(color:cyCanvas,padding:const EdgeInsets.fromLTRB(19,17,19,11),
+        if(activeTab!=0)Container(color:cyCanvas,padding:const EdgeInsets.fromLTRB(19,17,19,11),
           child:Row(children:[
             Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
               const Text('CYTECH / OPERATIONS',style:TextStyle(color:cyOrange,
                 fontSize:9,letterSpacing:1.4,fontWeight:FontWeight.w900)),
               const SizedBox(height:5),
-              Text(titles[tab],style:const TextStyle(fontWeight:FontWeight.w900,
+              Text(titles[activeTab],style:const TextStyle(fontWeight:FontWeight.w900,
                 color:cyNavy,fontSize:25,letterSpacing:-1)),
             ])),
             if(store.isAdmin&&(tab==1||tab==3))
@@ -42,12 +44,13 @@ class _MainShellState extends State<MainShell>{
                 icon:const Icon(Icons.add_rounded,color:Colors.white)),
             if(tab==4)const BrandMark(size:30),
           ])),
-        Expanded(child:IndexedStack(index:tab,children:[
+        Expanded(child:IndexedStack(index:activeTab,children:[
           _dashboard(),
           _groups(),
           WorkNoticeCenter(store:store),
           _teams(),
           store.isAdmin?AccountsCenter(store:store):_profile(),
+          if(store.isAdmin)AttendanceRecordsCenter(store:store),
         ])),
       ])),
       bottomNavigationBar:SafeArea(top:false,child:Container(
@@ -64,7 +67,8 @@ class _MainShellState extends State<MainShell>{
             ('Notices',Icons.campaign_rounded),
             ('Teams',Icons.groups_rounded),
             (store.isAdmin?'Accounts':'Profile',
-              store.isAdmin?Icons.account_balance_wallet_rounded:Icons.person_rounded)
+              store.isAdmin?Icons.account_balance_wallet_rounded:Icons.person_rounded),
+            if(store.isAdmin)('Records',Icons.fact_check_rounded),
           ].asMap().entries)Expanded(child:InkWell(
             key:Key('dock_'+item.key.toString()),
             borderRadius:BorderRadius.circular(16),
@@ -72,16 +76,16 @@ class _MainShellState extends State<MainShell>{
             child:AnimatedContainer(duration:const Duration(milliseconds:200),
               padding:const EdgeInsets.symmetric(vertical:8,horizontal:2),
               decoration:BoxDecoration(
-                color:tab==item.key?cyOrange:Colors.transparent,
+                color:activeTab==item.key?cyOrange:Colors.transparent,
                 borderRadius:BorderRadius.circular(15)),
               child:Column(mainAxisSize:MainAxisSize.min,children:[
                 Icon(item.value.$2,size:19,
-                  color:tab==item.key?Colors.white:const Color(0xFF91A7B8)),
+                  color:activeTab==item.key?Colors.white:const Color(0xFF91A7B8)),
                 const SizedBox(height:5),
                 FittedBox(fit:BoxFit.scaleDown,
                   child:Text(item.value.$1,style:TextStyle(
                     fontSize:9,fontWeight:FontWeight.w900,
-                    color:tab==item.key?Colors.white:const Color(0xFF9AB1C2)))),
+                    color:activeTab==item.key?Colors.white:const Color(0xFF9AB1C2)))),
               ]))))
         ]),
       )),
