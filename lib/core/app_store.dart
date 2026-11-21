@@ -66,11 +66,21 @@ class GroupEvent {
   Map<String,dynamic> toJson()=>{'id':id,'groupId':groupId,'kind':kind,
     'authorId':authorId,'text':text,'timestamp':timestamp,'referenceId':referenceId};
 }
+class EngineerApproval {
+  const EngineerApproval({required this.engineerId,required this.engineerName,required this.approvedAt});
+  final String engineerId,engineerName,approvedAt;
+  factory EngineerApproval.fromJson(Map<String,dynamic> m)=>EngineerApproval(
+    engineerId:m['engineerId'] as String,engineerName:m['engineerName'] as String,
+    approvedAt:m['approvedAt'] as String);
+  Map<String,dynamic> toJson()=>{'engineerId':engineerId,'engineerName':engineerName,
+    'approvedAt':approvedAt};
+}
 class AttendanceReport {
   AttendanceReport({required this.id,required this.groupId,required this.date,
     required this.authorId,required this.createdAt,required this.present,
     this.hours=const {},this.rateSnapshot=const {},this.otMultiplier=1.0,
-    this.permit,this.groupName=''});
+    this.permit,this.groupName='',this.approvals=const {}});
+  final Map<String,EngineerApproval> approvals;
   final PermitEvidence? permit;
   final String groupName;
   final String id,groupId,date,authorId,createdAt;
@@ -91,11 +101,14 @@ class AttendanceReport {
     rateSnapshot:(m['rateSnapshot'] as Map? ?? {}).map((k,v)=>MapEntry(k.toString(),(v as num?)?.toDouble())),
     otMultiplier:(m['otMultiplier'] as num?)?.toDouble()??1.0,
     groupName:(m['groupName'] as String?)??'',
-    permit:m['permit']==null?null:PermitEvidence.fromJson(Map<String,dynamic>.from(m['permit'] as Map)));
+    permit:m['permit']==null?null:PermitEvidence.fromJson(Map<String,dynamic>.from(m['permit'] as Map)),
+    approvals:(m['approvals'] as Map? ?? {}).map((k,v)=>MapEntry(k.toString(),
+      EngineerApproval.fromJson(Map<String,dynamic>.from(v as Map)))));
   Map<String,dynamic> toJson()=>{'id':id,'groupId':groupId,'date':date,
     'authorId':authorId,'createdAt':createdAt,'present':present,
     'hours':hours,'rateSnapshot':rateSnapshot,'otMultiplier':otMultiplier,
-    'permit':permit?.toJson(),'groupName':groupName};
+    'permit':permit?.toJson(),'groupName':groupName,
+    'approvals':approvals.map((k,v)=>MapEntry(k,v.toJson()))};
   int get presentCount=>present.values.where((v)=>v).length;
   int get absentCount=>present.values.where((v)=>!v).length;
 }
@@ -163,6 +176,63 @@ class AppStore extends ChangeNotifier {
   bool canPublish(WorkGroup g)=>isAdmin||g.roleOf(currentUserId)=='supervisor';
   bool canComplain(WorkGroup g)=>g.roleOf(currentUserId)=='engineer'&&!isAdmin;
   bool canReview(WorkGroup g)=>canPublish(g);
+  bool get hasEngineerRole=>signedIn&&!isAdmin&&groups.any((g)=>g.roleOf(currentUserId)=='engineer');
+  AttendanceReport? attendanceById(String id){
+    for(final a in attendance){if(a.id==id)return a;}return null;
+  }
+  bool isCurrentAttendance(AttendanceReport report)=>!attendance.any((a)=>
+    a.groupId==report.groupId&&a.date==report.date&&
+    (a.createdAt.compareTo(report.createdAt)>0||
+      (a.createdAt==report.createdAt&&a.id.compareTo(report.id)>0)));
+  List<String> assignedEngineers(AttendanceReport report){
+    for(final g in groups){
+      if(g.id==report.groupId)return g.members.where((m)=>m.role=='engineer')
+        .map((m)=>m.personId).toSet().toList();
+    }
+    return [];
+  }
+  bool canInspectAttendance(AttendanceReport report)=>signedIn&&
+    (isAdmin||assignedEngineers(report).contains(currentUserId));
+  bool canApproveAttendance(AttendanceReport report)=>hasEngineerRole&&
+    assignedEngineers(report).contains(currentUserId)&&isCurrentAttendance(report)&&
+    !report.approvals.containsKey(currentUserId)&&report.authorId!=currentUserId;
+  List<AttendanceReport> get engineerPendingAttendance=>hasEngineerRole?
+    (attendance.where(canApproveAttendance).toList()
+      ..sort((a,b)=>b.date.compareTo(a.date)==0?
+        b.createdAt.compareTo(a.createdAt):b.date.compareTo(a.date))):[];
+  List<AttendanceReport> get engineerApprovedAttendance=>hasEngineerRole?
+    (attendance.where((a)=>assignedEngineers(a).contains(currentUserId)&&
+      a.approvals.containsKey(currentUserId)).toList()
+      ..sort((a,b)=>b.approvals[currentUserId]!.approvedAt.compareTo(
+        a.approvals[currentUserId]!.approvedAt))):[];
+  bool _approvalSaving=false;
+  Future<void> approveAttendance(String reportId)async{
+    if(_approvalSaving)throw StateError('An approval is already being saved');
+    final report=attendanceById(reportId);
+    if(report==null||!canApproveAttendance(report)){
+      throw StateError('Only an assigned engineer may approve a current, unapproved attendance notice');
+    }
+    _approvalSaving=true;
+    final engineer=me;
+    final approval=EngineerApproval(engineerId:engineer.id,engineerName:engineer.name,
+      approvedAt:DateTime.now().toIso8601String());
+    final updated=AttendanceReport.fromJson({...report.toJson(),
+      'approvals':{...report.approvals.map((k,v)=>MapEntry(k,v.toJson())),
+        engineer.id:approval.toJson()}});
+    final index=attendance.indexOf(report);
+    attendance[index]=updated;
+    try{
+      final prefs=_prefs;
+      if(prefs==null||!await prefs.setString(storageKey,jsonEncode(_toJson()))){
+        throw StateError('Could not save engineer approval');
+      }
+    }catch(_){
+      final current=attendance.indexWhere((a)=>a.id==reportId);
+      if(current>=0&&identical(attendance[current],updated))attendance[current]=report;
+      rethrow;
+    }finally{_approvalSaving=false;}
+    notifyListeners();
+  }
   String roleFor(WorkGroup g)=>isAdmin?'Admin':(g.roleOf(currentUserId).isEmpty?'Not assigned':g.roleOf(currentUserId));
   String get currentRole {
     if(isAdmin)return 'Admin';
