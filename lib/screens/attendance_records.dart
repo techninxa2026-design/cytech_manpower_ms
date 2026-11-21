@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/app_store.dart';
 import '../core/cytech_theme.dart';
 import '../core/payroll.dart';
+import 'attendance_approval_widgets.dart';
 
 String attendanceGroupName(AppStore store,AttendanceReport report){
   if(report.groupName.isNotEmpty)return report.groupName;
@@ -157,6 +158,8 @@ class _AttendanceRecordsCenterState extends State<AttendanceRecordsCenter>{
           StatusPill(hourLabel(a.totalHours)+'h · '+hourLabel(a.totalOvertime)+'h OT'),
           StatusPill(effective?'CURRENT':'SUPERSEDED',tint:cyNavy,background:cyCanvas),
         ]),
+        const SizedBox(height:10),
+        AttendanceApprovalSummary(store:widget.store,reportId:a.id,compact:true),
       ]));
   }
 }
@@ -167,15 +170,17 @@ class AttendanceRecordDetail extends StatelessWidget{
   final AppStore store;
   final AttendanceReport report;
   final bool effective;
-  @override Widget build(BuildContext context){
-    final a=report,proof=a.permit;
-    if(!store.isAdmin)return const Scaffold(body:Center(child:Text('Admin only')));
+  @override Widget build(BuildContext context)=>AnimatedBuilder(animation:store,builder:(context,_){
+    final a=store.attendanceById(report.id);
+    if(a==null||!store.canInspectAttendance(a))return const Scaffold(body:Center(child:Text('Attendance review access required')));
+    final proof=a.permit;
+    final current=store.isCurrentAttendance(a);
     final verified=proof?.isValid??false;
     return Scaffold(body:SafeArea(child:Column(children:[
       AppPageHeader(title:'Attendance details',subtitle:a.date),
       Expanded(child:ListView(padding:const EdgeInsets.fromLTRB(17,5,17,24),children:[
         CyCard(color:cyNavy,child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-          StatusPill(effective?'CURRENT REPORT':'SUPERSEDED'),
+          StatusPill(current?'CURRENT REPORT':'SUPERSEDED'),
           const SizedBox(height:12),
           Text(attendanceGroupName(store,a),style:const TextStyle(color:Colors.white,
             fontSize:21,fontWeight:FontWeight.w900)),
@@ -186,6 +191,8 @@ class AttendanceRecordDetail extends StatelessWidget{
           Text('Published: '+a.createdAt.replaceFirst('T',' ').split('.').first,
             style:const TextStyle(color:Colors.white70,fontSize:11)),
         ])),
+        const SectionTitle('Engineer approval'),
+        AttendanceApprovalSummary(store:store,reportId:a.id),
         const SectionTitle('Work Permit'),
         CyCard(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
           if(proof!=null)...[
@@ -240,9 +247,11 @@ class AttendanceRecordDetail extends StatelessWidget{
               if(a.overtimeFor(entry.key)>0)StatusPill('+'+hourLabel(a.overtimeFor(entry.key))+'h OT'),
             ]),
           ]))),
-      ]))
+      ])),
+      if(store.canApproveAttendance(a))Container(color:Colors.white,padding:const EdgeInsets.fromLTRB(17,10,17,14),
+        child:EngineerApproveAction(store:store,reportId:a.id)),
     ])));
-  }
+  });
 }
 
 class _PermitImage extends StatelessWidget {
