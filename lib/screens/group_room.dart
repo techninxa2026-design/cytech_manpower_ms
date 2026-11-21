@@ -3,6 +3,10 @@ import '../core/app_store.dart';
 import '../core/cytech_theme.dart';
 import 'management_pages.dart';
 import '../core/payroll.dart';
+import 'dart:io';
+import '../core/permit_scanner.dart';
+import '../core/permit_evidence.dart';
+import 'work_permit_field.dart';
 
 class GroupRoom extends StatefulWidget{
   const GroupRoom({super.key,required this.store,required this.groupId,this.initialTab=0});
@@ -53,7 +57,7 @@ class _GroupRoomState extends State<GroupRoom>{
               if(v=='delete'){
                 final yes=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
                   title:const Text('Delete this group?'),
-                  content:const Text('Its chat, attendance notices, complaints and assignments will be removed from this device.'),
+                  content:const Text('Its chat, complaints and assignments will be removed. Historical attendance and Work Permit records are retained for Admin.'),
                   actions:[
                     TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('CANCEL')),
                     FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('DELETE')),
@@ -278,6 +282,8 @@ class _GroupRoomState extends State<GroupRoom>{
               color:cyNavy,fontSize:11,fontWeight:FontWeight.w900))),
           ])),
         const SizedBox(height:12),
+        if(n.permit!=null)Padding(padding:const EdgeInsets.only(bottom:9),
+          child:StatusPill('WORK PERMIT '+n.permit!.code,icon:Icons.verified_outlined)),
         Text('Published by '+s.person(n.authorId).name,
           style:const TextStyle(color:cyMuted,fontSize:10)),
         const SizedBox(height:10),
@@ -305,6 +311,8 @@ class _GroupRoomState extends State<GroupRoom>{
             fontWeight:FontWeight.w900,letterSpacing:1.5)),
           const SizedBox(height:7),
           Text(n.date,style:const TextStyle(fontWeight:FontWeight.w900,fontSize:24,color:cyNavy)),
+          if(n.permit!=null)Padding(padding:const EdgeInsets.only(top:8),
+            child:StatusPill('WORK PERMIT '+n.permit!.code,icon:Icons.verified_outlined)),
           const SizedBox(height:11),
           InfoBanner(hourLabel(n.totalHours)+' hours worked · '+hourLabel(n.totalOvertime)+
             ' hours overtime across '+n.presentCount.toString()+' present members',
@@ -516,10 +524,36 @@ class _AttendanceEditorState extends State<AttendanceEditor>{
   DateTime date=DateTime.now();
   late final Map<String,bool> status;
   late final Map<String,double> hours;
+  PermitScan? permitScan;
+  bool publishing=false;
   @override void initState(){
     super.initState();
     status={for(final m in widget.store.group(widget.groupId).members)m.personId:true};
     hours={for(final id in status.keys)id:8.0};
+  }
+  Future<void> publish()async{
+    final scan=permitScan;
+    if(scan==null||publishing||status.isEmpty)return;
+    final selectedDate=date;
+    final selectedStatus=Map<String,bool>.of(status);
+    final selectedHours=Map<String,double>.of(hours);
+    setState(()=>publishing=true);
+    PermitEvidence? evidence;
+    bool saved=false;
+    try {
+      evidence=await scan.persist();
+      await widget.store.postAttendance(widget.groupId,selectedDate,selectedStatus,
+        hours:selectedHours,permit:evidence);
+      saved=true;
+      if(mounted)Navigator.pop(context);
+    }catch(e){
+      if(!saved&&evidence!=null){
+        try{await File(evidence.imagePath).delete();}catch(_){}
+      }
+      if(mounted)toast(context,'Unable to publish: '+e.toString());
+    }finally{
+      if(mounted)setState(()=>publishing=false);
+    }
   }
   String shiftDisplay(String id){
     if(!(status[id]??false))return 'Absent · 0 hours';
@@ -552,6 +586,9 @@ class _AttendanceEditorState extends State<AttendanceEditor>{
             label:Text(dayKey(date)+'  ·  CHANGE DATE')),
         ])),
         const SizedBox(height:13),
+        WorkPermitField(key:const Key('work_permit_field'),locked:publishing,
+          onChanged:(scan)=>setState(()=>permitScan=scan)),
+        const SizedBox(height:13),
         Row(children:[
           Expanded(child:CyCard(child:Column(children:[
             Text(present.toString(),style:const TextStyle(color:Color(0xFF138857),
@@ -567,13 +604,16 @@ class _AttendanceEditorState extends State<AttendanceEditor>{
               fontSize:10,fontWeight:FontWeight.w900))
           ]))),
         ]),
-        Row(children:[
-          const Expanded(child:SectionTitle('Member attendance')),
-          TextButton(onPressed:()=>setState(()=>status.updateAll((_,__)=>true)),
-            child:const Text('ALL PRESENT')),
-          TextButton(onPressed:()=>setState(()=>status.updateAll((_,__)=>false)),
-            child:const Text('ALL ABSENT')),
+        const SectionTitle('Member attendance'),
+        Wrap(spacing:8,runSpacing:6,children:[
+          OutlinedButton.icon(onPressed:publishing?null:()=>setState(()=>status.updateAll((_,__)=>true)),
+            icon:const Icon(Icons.check_circle_outline_rounded,color:Color(0xFF138457),size:17),
+            label:const Text('All present')),
+          OutlinedButton.icon(onPressed:publishing?null:()=>setState(()=>status.updateAll((_,__)=>false)),
+            icon:const Icon(Icons.cancel_outlined,color:Color(0xFFB63D3D),size:17),
+            label:const Text('All absent')),
         ]),
+        const SizedBox(height:10),
         if(status.isEmpty)const EmptyPanel(title:'No group members',
           message:'Ask the admin to assign group members first.'),
         for(final id in status.keys)Padding(padding:const EdgeInsets.only(bottom:9),
@@ -632,12 +672,9 @@ class _AttendanceEditorState extends State<AttendanceEditor>{
       Container(color:Colors.white,padding:const EdgeInsets.fromLTRB(19,12,19,16),
         child:SizedBox(width:double.infinity,child:FilledButton.icon(
           key:const Key('publish_attendance'),
-          onPressed:status.isEmpty?null:(){
-            widget.store.postAttendance(widget.groupId,date,status,hours:hours);
-            Navigator.pop(context);
-          },
+          onPressed:status.isEmpty||permitScan==null||publishing?null:publish,
           icon:const Icon(Icons.campaign_rounded),
-          label:const Text('PUBLISH OFFICIAL NOTICE')))),
+          label:Text(publishing?'SAVING ATTENDANCE…':permitScan==null?'VERIFY WORK PERMIT FIRST':'PUBLISH OFFICIAL NOTICE')))),
     ])));
   }
 }
