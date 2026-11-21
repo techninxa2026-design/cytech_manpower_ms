@@ -131,8 +131,8 @@ class _AttendanceRecordsCenterState extends State<AttendanceRecordsCenter>{
       builder:(_)=>AttendanceRecordDetail(store:widget.store,report:a,effective:effective))),
       child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
         Row(children:[
-          if(verified)ClipRRect(borderRadius:BorderRadius.circular(9),
-            child:Image.file(File(proof!.imagePath),width:44,height:55,fit:BoxFit.cover,
+          if(proof!=null&&verified)ClipRRect(borderRadius:BorderRadius.circular(9),
+            child:Image.file(File(proof.imagePath),width:44,height:55,fit:BoxFit.cover,
               errorBuilder:(_,__,___)=>const Icon(Icons.broken_image_outlined)))
           else const Icon(Icons.description_outlined,color:cyMuted,size:34),
           const SizedBox(width:11),
@@ -197,13 +197,13 @@ class AttendanceRecordDetail extends StatelessWidget{
               style:const TextStyle(color:cyMuted,fontSize:10)),
             const SizedBox(height:10),
           ],
-          if(verified)...[
+          if(proof!=null&&verified)...[
             const StatusPill('VERIFIED SCAN',tint:Color(0xFF138457),background:Color(0xFFE7F8EF)),
             const SizedBox(height:9),
             InkWell(onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>
-              _PermitImage(path:proof!.imagePath,code:proof.code))),
+              _PermitImage(path:proof.imagePath,code:proof.code))),
               child:SizedBox(height:210,width:double.infinity,child:Image.file(
-                File(proof!.imagePath),fit:BoxFit.contain,
+                File(proof.imagePath),fit:BoxFit.contain,
                 errorBuilder:(_,__,___)=>const Center(child:Text('Photo unavailable'))))),
             const SizedBox(height:6),
             const Text('Tap image for full-page pinch-to-zoom',
