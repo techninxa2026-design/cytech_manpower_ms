@@ -82,3 +82,12 @@ When moving to a production system, implement authenticated users, a backend and
 | `lib/screens/group_room.dart` | Chat, attendance-hours form, notices and engineer complaints |
 | `lib/screens/management_pages.dart` | Team, group and group-member editors |
 | `test/widget_test.dart` | Role, payroll, duplicate-date, PDF and widget smoke tests |
+
+
+## Work Permit scans and Attendance Records (v6 / 1.1.0)
+
+- All **new** attendance reports require a full-page photo of the five-digit Permit-to-Work form. Admins and assigned supervisors can use the Android camera or gallery. The app normalizes orientation, performs bundled Latin ML Kit OCR, locates the printed PTW serial near the upper-right PTW No. label, checks the page landmarks and number-region resolution/contrast/edge detail, then verifies the serial on a second enlarged crop. Ambiguous, incomplete, low-quality and unmatched results block publication. There is no manual permit code override.
+- The publisher reviews the complete image (pinch to zoom) and detected number crop and confirms that the code matches before publishing. The photo is saved in app-private documents storage, and the attendance record stores the relative business association, photo path, code and scan time. If attendance persistence fails, the newly saved photo is removed.
+- Admin's six-item navigation includes **Records** (Attendance Records): all reports, date and group filters, search by worker, publisher, group, date or code, verified/legacy filters, current/superseded reports, member hours and overtime, and full-page photo viewing. Old records remain available and are marked as legacy if no permit exists. Group deletion preserves attendance and its work permit evidence.
+- The supported format is the provided printed **five-digit** PTW form. A different template, cropped page, unreadable digits or multiple plausible numbers must be rejected and rescanned. OCR checks are not a guarantee of authenticity, legal validity, all handwritten details or perfect accuracy; users must visually confirm the printed code. Native camera capture/OCR needs Android-device acceptance testing. Unit tests exercise the layout matcher and publication guard; the source photo is not bundled into the repo.
+- The app is still offline/demo: scans and records exist on the device where they were published and are not synchronized with another admin's phone. Do not use this preview as a production evidence or payroll repository without authenticated server storage, backups, audit trails and access controls.
