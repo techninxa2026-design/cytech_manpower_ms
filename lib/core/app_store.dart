@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'permit_evidence.dart';
 
 String newId() => DateTime.now().microsecondsSinceEpoch.toString();
 String dayKey(DateTime date) => date.toIso8601String().substring(0, 10);
@@ -68,7 +69,10 @@ class GroupEvent {
 class AttendanceReport {
   AttendanceReport({required this.id,required this.groupId,required this.date,
     required this.authorId,required this.createdAt,required this.present,
-    this.hours=const {},this.rateSnapshot=const {},this.otMultiplier=1.0});
+    this.hours=const {},this.rateSnapshot=const {},this.otMultiplier=1.0,
+    this.permit,this.groupName=''});
+  final PermitEvidence? permit;
+  final String groupName;
   final String id,groupId,date,authorId,createdAt;
   final Map<String,bool> present;
   final Map<String,double> hours;
@@ -85,10 +89,13 @@ class AttendanceReport {
     present:Map<String,bool>.from(m['present'] as Map? ?? {}),
     hours:(m['hours'] as Map? ?? {}).map((k,v)=>MapEntry(k.toString(),(v as num).toDouble())),
     rateSnapshot:(m['rateSnapshot'] as Map? ?? {}).map((k,v)=>MapEntry(k.toString(),(v as num?)?.toDouble())),
-    otMultiplier:(m['otMultiplier'] as num?)?.toDouble()??1.0);
+    otMultiplier:(m['otMultiplier'] as num?)?.toDouble()??1.0,
+    groupName:(m['groupName'] as String?)??'',
+    permit:m['permit']==null?null:PermitEvidence.fromJson(Map<String,dynamic>.from(m['permit'] as Map)));
   Map<String,dynamic> toJson()=>{'id':id,'groupId':groupId,'date':date,
     'authorId':authorId,'createdAt':createdAt,'present':present,
-    'hours':hours,'rateSnapshot':rateSnapshot,'otMultiplier':otMultiplier};
+    'hours':hours,'rateSnapshot':rateSnapshot,'otMultiplier':otMultiplier,
+    'permit':permit?.toJson(),'groupName':groupName};
   int get presentCount=>present.values.where((v)=>v).length;
   int get absentCount=>present.values.where((v)=>!v).length;
 }
@@ -293,9 +300,18 @@ class AppStore extends ChangeNotifier {
     changed();return key;
   }
   void deleteGroup(String id){
+    if(!isAdmin)throw StateError('Admin only');
+    final groupName=group(id).name;
+    // Attendance is an independent financial/evidence record. Deleting a group
+    // must not erase past scans or the payroll history.
+    for(int i=0;i<attendance.length;i++){
+      final entry=attendance[i];
+      if(entry.groupId==id&&entry.groupName.isEmpty){
+        attendance[i]=AttendanceReport.fromJson({...entry.toJson(),'groupName':groupName});
+      }
+    }
     groups.removeWhere((g)=>g.id==id);
     events.removeWhere((e)=>e.groupId==id);
-    attendance.removeWhere((e)=>e.groupId==id);
     complaints.removeWhere((e)=>e.groupId==id);changed();
   }
   void saveAssignments(String groupId,List<GroupMember> members){
@@ -313,21 +329,40 @@ class AppStore extends ChangeNotifier {
     events.add(GroupEvent(id:newId(),groupId:groupId,kind:'chat',authorId:currentUserId,
       text:text.trim(),timestamp:DateTime.now().toIso8601String()));changed();
   }
-  void postAttendance(String groupId,DateTime date,Map<String,bool> status,{Map<String,double>? hours}){
-    final g=group(groupId);if(!canPublish(g)||status.isEmpty)return;
+  Future<void> postAttendance(String groupId,DateTime date,Map<String,bool> status,
+    {Map<String,double>? hours,PermitEvidence? permit}) async {
+    if(!signedIn)throw StateError('Sign in first');
+    final g=group(groupId);
+    if(!canPublish(g))throw StateError('Only assigned supervisors and admins can publish');
+    if(status.isEmpty)throw ArgumentError('Select attendance members');
+    if(permit==null||!permit.isValid)throw StateError('A verified Work Permit scan is required');
+    if(status.keys.any((id)=>!g.members.any((m)=>m.personId==id))){
+      throw StateError('Attendance contains an unassigned worker');
+    }
     final cleanHours=<String,double>{};
     for(final item in status.entries){
-      final h=item.value?(hours?[item.key]??8).clamp(0,24).toDouble():0.0;
-      if(!h.isFinite)throw ArgumentError('Working hours must be finite');
+      final raw=hours?[item.key]??8.0;
+      if(!raw.isFinite||raw<0||raw>24)throw ArgumentError('Hours must be between 0 and 24');
+      final h=item.value?raw:0.0;
       cleanHours[item.key]=h;
     }
     final now=DateTime.now().toIso8601String(),id=newId();
-    attendance.insert(0,AttendanceReport(id:id,groupId:groupId,date:dayKey(date),
+    final report=AttendanceReport(id:id,groupId:groupId,date:dayKey(date),
       authorId:currentUserId,createdAt:now,present:Map.of(status),
       hours:cleanHours,rateSnapshot:{for(final personId in status.keys)personId:person(personId).hourlyRate},
-      otMultiplier:overtimeMultiplier));
-    events.add(GroupEvent(id:'event-'+id,groupId:groupId,kind:'attendance',
-      authorId:currentUserId,text:'Official attendance report',timestamp:now,referenceId:id));changed();
+      otMultiplier:overtimeMultiplier,permit:permit,groupName:g.name);
+    final event=GroupEvent(id:'event-'+id,groupId:groupId,kind:'attendance',
+      authorId:currentUserId,text:'Official attendance report',timestamp:now,referenceId:id);
+    attendance.insert(0,report);events.add(event);
+    try {
+      final prefs=_prefs;
+      if(prefs==null||!await prefs.setString(storageKey,jsonEncode(_toJson()))) {
+        throw StateError('Could not save attendance on this device');
+      }
+    } catch (_) {
+      attendance.remove(report);events.remove(event);rethrow;
+    }
+    notifyListeners();
   }
   void sendComplaint(String groupId,String text){
     final g=group(groupId);if(!canComplain(g)||text.trim().isEmpty)return;
