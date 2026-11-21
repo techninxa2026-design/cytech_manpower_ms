@@ -59,7 +59,8 @@ class PayrollEngine {
       if(groupId!=null&&report.groupId!=groupId)continue;
       if(!uniqueDates.add(report.groupId+'|'+report.date))continue;
       final groups=store.groups.where((g)=>g.id==report.groupId);
-      final groupName=groups.isEmpty?'Archived group':groups.first.name;
+      final groupName=report.groupName.isNotEmpty?report.groupName:
+        (groups.isEmpty?'Archived group':groups.first.name);
       for(final pair in report.present.entries){
         final row=rows[pair.key];
         if(row==null)continue;
