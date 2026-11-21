@@ -6,6 +6,7 @@ import 'group_room.dart';
 import 'public_notices.dart';
 import 'accounts_page.dart';
 import 'attendance_records.dart';
+import 'engineer_approvals.dart';
 
 void pushPage(BuildContext context,Widget page){
   Navigator.push(context,MaterialPageRoute(builder:(_)=>page));
@@ -22,7 +23,9 @@ class _MainShellState extends State<MainShell>{
   AppStore get store=>widget.store;
   @override Widget build(BuildContext context)=>AnimatedBuilder(animation:store,builder:(context,_){
     final titles=['Workspace','Groups','Public Notices','Teams',
-      store.isAdmin?'Accounts':'Profile',if(store.isAdmin)'Attendance Records'];
+      store.isAdmin?'Accounts':'Profile',if(store.isAdmin)'Attendance Records',
+      if(store.hasEngineerRole)'Approvals'];
+    final pending=store.engineerPendingAttendance.length;
     final activeTab=tab>=titles.length?0:tab;
     return Scaffold(
       extendBody:true,
@@ -51,6 +54,7 @@ class _MainShellState extends State<MainShell>{
           _teams(),
           store.isAdmin?AccountsCenter(store:store):_profile(),
           if(store.isAdmin)AttendanceRecordsCenter(store:store),
+          if(store.hasEngineerRole)EngineerApprovalsCenter(key:ValueKey(store.currentUserId),store:store),
         ])),
       ])),
       bottomNavigationBar:SafeArea(top:false,child:Container(
@@ -69,6 +73,7 @@ class _MainShellState extends State<MainShell>{
             (store.isAdmin?'Accounts':'Profile',
               store.isAdmin?Icons.account_balance_wallet_rounded:Icons.person_rounded),
             if(store.isAdmin)('Records',Icons.fact_check_rounded),
+            if(store.hasEngineerRole)('Approvals',Icons.verified_rounded),
           ].asMap().entries)Expanded(child:InkWell(
             key:Key('dock_'+item.key.toString()),
             borderRadius:BorderRadius.circular(16),
@@ -79,8 +84,15 @@ class _MainShellState extends State<MainShell>{
                 color:activeTab==item.key?cyOrange:Colors.transparent,
                 borderRadius:BorderRadius.circular(15)),
               child:Column(mainAxisSize:MainAxisSize.min,children:[
-                Icon(item.value.$2,size:19,
-                  color:activeTab==item.key?Colors.white:const Color(0xFF91A7B8)),
+                Stack(clipBehavior:Clip.none,children:[
+                  Icon(item.value.$2,size:19,color:activeTab==item.key?Colors.white:const Color(0xFF91A7B8)),
+                  if(item.value.$1=='Approvals'&&pending>0)Positioned(top:-6,right:-12,
+                    child:Container(padding:const EdgeInsets.symmetric(horizontal:4,vertical:1),
+                      decoration:BoxDecoration(color:activeTab==item.key?Colors.white:cyOrange,
+                        borderRadius:BorderRadius.circular(10)),
+                      child:Text(pending>99?'99+':pending.toString(),style:TextStyle(fontSize:8,
+                        fontWeight:FontWeight.w900,color:activeTab==item.key?cyOrange:Colors.white)))),
+                ]),
                 const SizedBox(height:5),
                 FittedBox(fit:BoxFit.scaleDown,
                   child:Text(item.value.$1,style:TextStyle(
@@ -134,6 +146,17 @@ class _MainShellState extends State<MainShell>{
           ]))),
       Padding(padding:const EdgeInsets.fromLTRB(19,0,19,30),child:Column(
         crossAxisAlignment:CrossAxisAlignment.start,children:[
+          if(store.hasEngineerRole&&store.engineerPendingAttendance.isNotEmpty)...[
+            CyCard(onTap:()=>setState(()=>tab=5),child:Row(children:[
+              const Icon(Icons.pending_actions_rounded,color:cyOrange,size:26),const SizedBox(width:10),
+              Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                Text(store.engineerPendingAttendance.length.toString()+' attendance approval(s) pending',
+                  style:const TextStyle(color:cyNavy,fontSize:13,fontWeight:FontWeight.w900)),
+                const Text('Review your assigned groups',style:TextStyle(color:cyMuted,fontSize:11)),
+              ])),const Icon(Icons.chevron_right_rounded,color:cyOrange),
+            ])),
+            const SizedBox(height:16),
+          ],
           const Text('QUICK OPERATIONS',style:TextStyle(color:cyOrange,
             fontWeight:FontWeight.w900,fontSize:10,letterSpacing:1.5)),
           const SizedBox(height:12),
