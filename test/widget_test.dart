@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cytech_mms/core/permit_evidence.dart';
 import 'package:cytech_mms/core/permit_matcher.dart';
+import 'package:cytech_mms/screens/attendance_records.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cytech_mms/main.dart';
@@ -237,5 +238,70 @@ void main(){
     expect(find.text('Attendance Records'),findsOneWidget);
     store.demoAs('rafi');await tester.pumpAndSettle();
     expect(find.byKey(const Key('dock_5')),findsNothing);
+  });
+
+  test('engineer approval is individual, role-scoped, durable and revision-specific',()async{
+    final store=AppStore();await store.initialize();store.enter(username:'ayesha');
+    await store.postAttendance('group-1',DateTime(2026,11,22),
+      {'fahim':true,'nabila':true},hours:{'fahim':9,'nabila':8},permit:evidence);
+    final report=store.attendance.first;
+    expect(report.approvals,isEmpty);
+    await expectLater(store.approveAttendance(report.id),throwsStateError);
+    store.demoAs('rafi');
+    await expectLater(store.approveAttendance(report.id),throwsStateError);
+    store.demoAs('admin');
+    await expectLater(store.approveAttendance(report.id),throwsStateError);
+    store.demoAs('sadia');
+    await expectLater(store.approveAttendance(report.id),throwsStateError);
+    store.demoAs('fahim'); // Also a supervisor in a different group.
+    expect(store.hasEngineerRole,isTrue);
+    expect(store.engineerPendingAttendance.any((a)=>a.id==report.id),isTrue);
+    await store.approveAttendance(report.id);
+    expect(store.attendanceById(report.id)!.approvals['fahim']!.engineerName,'Fahim Ahmed');
+    expect(store.engineerPendingAttendance.any((a)=>a.id==report.id),isFalse);
+    expect(store.engineerApprovedAttendance.any((a)=>a.id==report.id),isTrue);
+    await expectLater(store.approveAttendance(report.id),throwsStateError);
+    store.demoAs('nabila');
+    expect(store.engineerPendingAttendance.any((a)=>a.id==report.id),isTrue);
+    await store.approveAttendance(report.id);
+    final restored=AppStore();await restored.initialize();restored.enter(username:'admin');
+    final saved=restored.attendanceById(report.id)!;
+    expect(saved.approvals.keys,containsAll(['fahim','nabila']));
+    expect(saved.approvals['fahim']!.approvedAt,isNotEmpty);
+    expect(saved.hoursFor('fahim'),9);
+    expect(saved.permit!.code,evidence.code);
+    await restored.postAttendance('group-1',DateTime(2026,11,22),
+      {'fahim':true,'nabila':true},hours:{'fahim':8,'nabila':8},permit:evidence);
+    final corrected=restored.attendance.first;
+    expect(corrected.id,isNot(report.id));
+    expect(corrected.approvals,isEmpty);
+    expect(restored.isCurrentAttendance(saved),isFalse);
+    restored.demoAs('fahim');
+    expect(restored.engineerPendingAttendance.any((a)=>a.id==corrected.id),isTrue);
+    expect(restored.engineerApprovedAttendance.any((a)=>a.id==report.id),isTrue);
+    expect(restored.canApproveAttendance(saved),isFalse);
+  });
+
+  testWidgets('engineer approvals navigation and confirmation update the same record',(tester)async{
+    final store=AppStore();await store.initialize();store.enter(username:'fahim');
+    // Engineer of Site Alpha, supervisor of Warehouse. Legacy sample is pending.
+    final report=store.engineerPendingAttendance.first;
+    await tester.pumpWidget(MyApp(store:store));await tester.pumpAndSettle();
+    expect(find.byKey(const Key('dock_5')),findsOneWidget);
+    await tester.tap(find.byKey(const Key('dock_5')));await tester.pumpAndSettle();
+    expect(find.text('Approvals'),findsWidgets);
+    expect(find.byKey(const Key('approval_pending_tab')),findsOneWidget);
+    final review=find.text('Review & approve');
+    await tester.ensureVisible(review.first);
+    await tester.tap(review.first);await tester.pumpAndSettle();
+    expect(find.byType(AttendanceRecordDetail),findsOneWidget);
+    await tester.tap(find.byKey(const Key('approve_attendance')));await tester.pumpAndSettle();
+    await tester.tap(find.text('Confirm approval'));await tester.pumpAndSettle();
+    expect(store.attendanceById(report.id)!.approvals.containsKey('fahim'),isTrue);
+    expect(find.byKey(const Key('approve_attendance')),findsNothing);
+    expect(find.text('ENGINEER APPROVED'),findsWidgets);
+    await tester.pageBack();await tester.pumpAndSettle();
+    expect(store.engineerPendingAttendance.any((a)=>a.id==report.id),isFalse);
+    expect(store.engineerApprovedAttendance.any((a)=>a.id==report.id),isTrue);
   });
 }
