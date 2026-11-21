@@ -296,7 +296,7 @@ void main(){
     expect(find.byKey(const Key('approval_pending_tab')),findsOneWidget);
     final review=find.text('Review & approve');
     await tester.scrollUntilVisible(review.first,180,scrollable:find.descendant(
-      of:find.byKey(const Key('engineer_approval_list')),matching:find.byType(Scrollable)));
+      of:find.byKey(const Key('engineer_approval_list')),matching:find.byType(Scrollable)).first);
     await tester.pumpAndSettle();
     await tester.tap(review.first);await tester.pumpAndSettle();
     expect(find.byType(AttendanceRecordDetail),findsOneWidget);
@@ -306,7 +306,7 @@ void main(){
     expect(find.byKey(const Key('approve_attendance')),findsNothing);
     final approvalText=find.text('ENGINEER APPROVED');
     await tester.scrollUntilVisible(approvalText.first,120,scrollable:find.descendant(
-      of:find.byType(AttendanceRecordDetail),matching:find.byType(Scrollable)));
+      of:find.byType(AttendanceRecordDetail),matching:find.byType(Scrollable)).first);
     expect(approvalText,findsWidgets);
     await tester.pageBack();await tester.pumpAndSettle();
     expect(store.engineerPendingAttendance.any((a)=>a.id==report.id),isFalse);
