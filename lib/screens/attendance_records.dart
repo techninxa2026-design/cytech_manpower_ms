@@ -4,6 +4,7 @@ import '../core/app_store.dart';
 import '../core/cytech_theme.dart';
 import '../core/payroll.dart';
 import 'attendance_approval_widgets.dart';
+import 'daily_attendance_print.dart';
 
 String attendanceGroupName(AppStore store,AttendanceReport report){
   if(report.groupName.isNotEmpty)return report.groupName;
@@ -71,6 +72,10 @@ class _AttendanceRecordsCenterState extends State<AttendanceRecordsCenter>{
           ]),
         ])),
       const SizedBox(height:13),
+      SizedBox(width:double.infinity,child:FilledButton.icon(
+        key:const Key('records_daily_print'),onPressed:()=>_printDay(date==null?null:dayKey(date!)),
+        icon:const Icon(Icons.print_rounded),label:const Text('PRINT DAILY ATTENDANCE'))),
+      const SizedBox(height:13),
       TextField(key:const Key('records_search'),controller:search,
         onChanged:(v)=>setState(()=>query=v),
         decoration:InputDecoration(prefixIcon:const Icon(Icons.search_rounded),
@@ -112,8 +117,12 @@ class _AttendanceRecordsCenterState extends State<AttendanceRecordsCenter>{
       for(int i=0;i<rows.length;i++)...[
         if(i==0||rows[i].date!=rows[i-1].date)Padding(
           padding:const EdgeInsets.only(top:10,bottom:8),
-          child:Text(rows[i].date,style:const TextStyle(
-            color:cyNavy,fontSize:14,fontWeight:FontWeight.w900))),
+          child:Row(children:[
+            Expanded(child:Text(rows[i].date,style:const TextStyle(
+              color:cyNavy,fontSize:14,fontWeight:FontWeight.w900))),
+            TextButton.icon(onPressed:()=>_printDay(rows[i].date),
+              icon:const Icon(Icons.print_outlined,size:17),label:const Text('Print day')),
+          ])),
         Padding(padding:const EdgeInsets.only(bottom:9),
           child:_record(rows[i],latest[rows[i].groupId+'|'+rows[i].date]==rows[i].id)),
       ],
@@ -121,6 +130,9 @@ class _AttendanceRecordsCenterState extends State<AttendanceRecordsCenter>{
       const InfoBanner('Records remain on this device. Prior reports without a photo are marked legacy. Superseded reports are retained for review; only the latest group/date counts in payroll.'),
     ]);
   }
+  void _printDay(String? value)=>Navigator.push(context,MaterialPageRoute(
+    builder:(_)=>DailyAttendancePrintPage(store:widget.store,initialDate:value,
+      initialGroup:group=='all'?null:group)));
   Widget _stat(String value,String label)=>Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
     FittedBox(fit:BoxFit.scaleDown,child:Text(value,style:const TextStyle(
       color:Colors.white,fontWeight:FontWeight.w900,fontSize:20))),
