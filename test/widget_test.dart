@@ -11,6 +11,9 @@ import 'package:cytech_mms/core/cytech_theme.dart';
 import 'package:cytech_mms/screens/group_room.dart';
 import 'package:cytech_mms/core/payroll.dart';
 import 'package:cytech_mms/core/payroll_pdf.dart';
+import 'package:cytech_mms/core/daily_attendance_pdf.dart';
+import 'package:cytech_mms/screens/daily_attendance_print.dart';
+import 'package:image/image.dart' as img;
 
 void main(){
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -292,16 +295,63 @@ void main(){
     expect(find.text('Approvals'),findsWidgets);
     expect(find.byKey(const Key('approval_pending_tab')),findsOneWidget);
     final review=find.text('Review & approve');
-    await tester.ensureVisible(review.first);
+    await tester.scrollUntilVisible(review.first,180,scrollable:find.descendant(
+      of:find.byKey(const Key('engineer_approval_list')),matching:find.byType(Scrollable)));
+    await tester.pumpAndSettle();
     await tester.tap(review.first);await tester.pumpAndSettle();
     expect(find.byType(AttendanceRecordDetail),findsOneWidget);
     await tester.tap(find.byKey(const Key('approve_attendance')));await tester.pumpAndSettle();
     await tester.tap(find.text('Confirm approval'));await tester.pumpAndSettle();
     expect(store.attendanceById(report.id)!.approvals.containsKey('fahim'),isTrue);
     expect(find.byKey(const Key('approve_attendance')),findsNothing);
-    expect(find.text('ENGINEER APPROVED'),findsWidgets);
+    final approvalText=find.text('ENGINEER APPROVED');
+    await tester.scrollUntilVisible(approvalText.first,120,scrollable:find.descendant(
+      of:find.byType(AttendanceRecordDetail),matching:find.byType(Scrollable)));
+    expect(approvalText,findsWidgets);
     await tester.pageBack();await tester.pumpAndSettle();
     expect(store.engineerPendingAttendance.any((a)=>a.id==report.id),isFalse);
     expect(store.engineerApprovedAttendance.any((a)=>a.id==report.id),isTrue);
+  });
+
+  test('daily attendance export selects latest reports, date and group and includes permit appendix',()async{
+    final store=AppStore();await store.initialize();store.enter(username:'admin');
+    final image=img.Image(width:100,height:140);
+    img.fill(image,color:img.ColorRgb8(220,230,220));
+    final file=await File(evidenceDirectory.path+'/permit_valid.jpg').writeAsBytes(img.encodeJpg(image));
+    final proof=PermitEvidence(code:'16385',imagePath:file.path,scannedAt:'2026-11-21T10:00:00');
+    final day=DateTime(2026,11,22);
+    await store.postAttendance('group-1',day,{'fahim':true},hours:{'fahim':12},permit:proof);
+    final old=store.attendance.first;
+    await store.postAttendance('group-1',day,{'fahim':true,'rafi':false},hours:{'fahim':9},permit:proof);
+    final latest=store.attendance.first;
+    await store.postAttendance('group-2',day,{'tanvir':true},hours:{'tanvir':8},permit:proof);
+    store.demoAs('fahim');await store.approveAttendance(latest.id);
+    await expectLater(DailyAttendancePdf.build(store,'2026-11-22'),throwsStateError);
+    store.demoAs('admin');
+    final all=DailyAttendancePdf.records(store,'2026-11-22');
+    expect(all.length,2);
+    expect(all.any((a)=>a.id==old.id),isFalse);
+    expect(all.fold<double>(0,(sum,a)=>sum+a.totalHours),17);
+    final selected=DailyAttendancePdf.records(store,'2026-11-22',groupId:'group-1').single;
+    expect(selected.approvals['fahim']?.engineerName,'Fahim Ahmed');
+    expect(selected.totalOvertime,1);
+    final pdf=await DailyAttendancePdf.build(store,'2026-11-22');
+    final noPhotos=await DailyAttendancePdf.build(store,'2026-11-22',includePermits:false);
+    expect(String.fromCharCodes(pdf.take(5)),'%PDF-');
+    expect(pdf.length,greaterThan(noPhotos.length));
+    expect(DailyAttendancePdf.records(store,'2099-01-01'),isEmpty);
+    await expectLater(DailyAttendancePdf.build(store,'2099-01-01'),throwsStateError);
+  });
+
+  testWidgets('admin attendance records opens daily print settings',(tester)async{
+    final store=AppStore();await store.initialize();store.enter(username:'admin');
+    await tester.pumpWidget(MaterialApp(theme:cytechTheme(),
+      home:Scaffold(body:AttendanceRecordsCenter(store:store))));await tester.pumpAndSettle();
+    final button=find.byKey(const Key('records_daily_print'));
+    await tester.ensureVisible(button);await tester.tap(button);await tester.pumpAndSettle();
+    expect(find.byType(DailyAttendancePrintPage),findsOneWidget);
+    expect(find.byKey(const Key('daily_print_submit')),findsOneWidget);
+    expect(tester.widget<FilledButton>(find.byKey(const Key('daily_print_submit'))).onPressed,isNotNull);
+    expect(find.byKey(const Key('daily_print_share')),findsOneWidget);
   });
 }
