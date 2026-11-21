@@ -22,7 +22,7 @@ class _EngineerApprovalsCenterState extends State<EngineerApprovalsCenter>{
       a.date,attendanceGroupName(s,a),a.permit?.code??'',s.person(a.authorId).name,
       ...a.present.keys.map((id)=>s.person(id).name)
     ].any((x)=>x.toLowerCase().contains(q))).toList();
-    return ListView(padding:const EdgeInsets.fromLTRB(17,6,17,110),children:[
+    return ListView(key:const Key('engineer_approval_list'),padding:const EdgeInsets.fromLTRB(17,6,17,110),children:[
       CyCard(color:cyNavy,child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
         const Row(children:[
           Icon(Icons.verified_user_rounded,color:cyOrange,size:20),SizedBox(width:8),
