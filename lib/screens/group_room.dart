@@ -7,6 +7,8 @@ import 'dart:io';
 import '../core/permit_scanner.dart';
 import '../core/permit_evidence.dart';
 import 'work_permit_field.dart';
+import 'attendance_records.dart';
+import 'attendance_approval_widgets.dart';
 
 class GroupRoom extends StatefulWidget{
   const GroupRoom({super.key,required this.store,required this.groupId,this.initialTab=0});
@@ -287,6 +289,15 @@ class _GroupRoomState extends State<GroupRoom>{
         Text('Published by '+s.person(n.authorId).name,
           style:const TextStyle(color:cyMuted,fontSize:10)),
         const SizedBox(height:10),
+        AttendanceApprovalSummary(store:s,reportId:n.id,compact:true),
+        if(s.canApproveAttendance(n))...[
+          const SizedBox(height:10),
+          SizedBox(width:double.infinity,child:FilledButton.icon(
+            key:ValueKey('review_attendance_'+n.id),
+            onPressed:()=>navigate(AttendanceRecordDetail(store:s,report:n,effective:s.isCurrentAttendance(n))),
+            icon:const Icon(Icons.verified_outlined,size:18),label:const Text('Review & approve attendance'))),
+        ],
+        const SizedBox(height:10),
         InkWell(onTap:()=>_showReport(n),child:const Row(
           mainAxisAlignment:MainAxisAlignment.spaceBetween,children:[
           Text('VIEW MEMBER-WISE ATTENDANCE',style:TextStyle(
@@ -317,6 +328,8 @@ class _GroupRoomState extends State<GroupRoom>{
           InfoBanner(hourLabel(n.totalHours)+' hours worked · '+hourLabel(n.totalOvertime)+
             ' hours overtime across '+n.presentCount.toString()+' present members',
             icon:Icons.schedule_rounded,color:cyOrange),
+          const SizedBox(height:12),
+          AttendanceApprovalSummary(store:widget.store,reportId:n.id),
           const SizedBox(height:15),
           for(final entry in n.present.entries)Padding(padding:const EdgeInsets.only(bottom:9),
             child:CyCard(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
