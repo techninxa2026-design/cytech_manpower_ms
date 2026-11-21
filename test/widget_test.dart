@@ -1,4 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:cytech_mms/core/permit_evidence.dart';
+import 'package:cytech_mms/core/permit_matcher.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cytech_mms/main.dart';
@@ -10,7 +13,16 @@ import 'package:cytech_mms/core/payroll_pdf.dart';
 
 void main(){
   TestWidgetsFlutterBinding.ensureInitialized();
-  setUp(()=>SharedPreferences.setMockInitialValues({}));
+  late Directory evidenceDirectory;
+  late PermitEvidence evidence;
+  setUp(()async{
+    SharedPreferences.setMockInitialValues({});
+    evidenceDirectory=await Directory.systemTemp.createTemp('cytech-test-');
+    // Persistence fixture only: real OCR is tested separately on an Android device.
+    final file=await File(evidenceDirectory.path+'/test.jpg').writeAsBytes([1,2,3]);
+    evidence=PermitEvidence(code:'16385',imagePath:file.path,scannedAt:'2026-11-21T10:00:00');
+  });
+  tearDown(()async{await evidenceDirectory.delete(recursive:true);});
 
   test('seeded project data contains people, teams, groups and group events',()async{
     final store=AppStore();await store.initialize();
@@ -27,7 +39,7 @@ void main(){
     expect(store.canPublish(group),isTrue);
     expect(store.canComplain(group),isFalse);
     final before=store.reportsFor(group.id).length;
-    store.postAttendance(group.id,DateTime(2026,11,14),{'ayesha':true,'fahim':false});
+    await store.postAttendance(group.id,DateTime(2026,11,14),{'ayesha':true,'fahim':false},permit:evidence);
     expect(store.reportsFor(group.id).length,before+1);
     store.enter(username:'fahim');
     expect(store.canPublish(group),isFalse);
@@ -87,8 +99,8 @@ void main(){
     final store=AppStore();await store.initialize();
     store.enter(username:'admin');
     store.setOvertimeMultiplier(1.5);
-    store.postAttendance('group-1',DateTime(2026,11,14),{'fahim':true,'rafi':false},
-      hours:{'fahim':9,'rafi':0});
+    await store.postAttendance('group-1',DateTime(2026,11,14),{'fahim':true,'rafi':false},
+      hours:{'fahim':9,'rafi':0},permit:evidence);
     final before=PayrollEngine.month(store,DateTime(2026,11));
     final fahim=before.workers.firstWhere((r)=>r.person.id=='fahim');
     final shift=fahim.lines.firstWhere((l)=>l.date=='2026-11-14');
@@ -104,8 +116,8 @@ void main(){
     expect(historic.rate,300);
     expect(historic.gross,2850);
     // Another report for the same group/date replaces the first payroll entry.
-    store.postAttendance('group-1',DateTime(2026,11,14),{'fahim':true},
-      hours:{'fahim':8});
+    await store.postAttendance('group-1',DateTime(2026,11,14),{'fahim':true},
+      hours:{'fahim':8},permit:evidence);
     final current=PayrollEngine.month(store,DateTime(2026,11))
       .workers.firstWhere((r)=>r.person.id=='fahim');
     expect(current.lines.where((l)=>l.date=='2026-11-14').length,1);
@@ -156,5 +168,74 @@ void main(){
     await tester.tap(find.byKey(const Key('dock_2')));
     await tester.pumpAndSettle();
     expect(find.text('Know where.\nKnow when.'),findsOneWidget);
+  });
+
+  test('permit matcher recognizes top-right PTW serial and rejects ambiguous or incomplete scans',(){
+    final lines=[
+      const PermitText('Permit-to-Work: General Work',Rect.fromLTWH(310,170,420,25)),
+      const PermitText('PTW No.',Rect.fromLTWH(820,164,95,20)),
+      const PermitText('Date of issue',Rect.fromLTWH(820,190,100,18)),
+      const PermitText('PART 1',Rect.fromLTWH(450,304,100,20)),
+      const PermitText('LOCATION of work',Rect.fromLTWH(100,331,150,18)),
+      const PermitText('POST-PERMIT MEASURES required',Rect.fromLTWH(100,1190,350,22)),
+    ];
+    const size=Size(1204,1600);
+    const target=PermitText('16385',Rect.fromLTWH(895,267,82,26),confidence:.95);
+    const elsewhere=PermitText('99999',Rect.fromLTWH(901,900,75,18),confidence:.99);
+    expect(PermitMatcher.match(lines,[target,elsewhere],size)?.code,'16385');
+    expect(PermitMatcher.match(lines,[elsewhere],size),isNull);
+    expect(PermitMatcher.match(lines,[target,
+      const PermitText('12345',Rect.fromLTWH(970,263,70,24))],size),isNull);
+    expect(PermitMatcher.match(lines.take(5).toList(),[target],size),isNull);
+    expect(PermitMatcher.match(lines,[target],const Size(480,640)),isNull);
+    expect(PermitMatcher.match(lines,[const PermitText('16385',
+      Rect.fromLTWH(895,267,82,26),confidence:.3)],size),isNull);
+  });
+
+  test('attendance requires evidence, retains it across restart and group deletion',()async{
+    final store=AppStore();await store.initialize();store.enter(username:'ayesha');
+    final before=store.attendance.length;
+    await expectLater(store.postAttendance('group-1',DateTime(2026,11,21),{'fahim':true}),
+      throwsStateError);
+    expect(store.attendance.length,before);
+    final invalid=PermitEvidence(code:'wrong',imagePath:evidence.imagePath,scannedAt:evidence.scannedAt);
+    await expectLater(store.postAttendance('group-1',DateTime(2026,11,21),{'fahim':true},permit:invalid),
+      throwsStateError);
+    await store.postAttendance('group-1',DateTime(2026,11,21),{'fahim':true},
+      hours:{'fahim':9},permit:evidence);
+    final restored=AppStore();await restored.initialize();restored.enter(username:'admin');
+    final record=restored.attendance.firstWhere((a)=>a.date=='2026-11-21');
+    expect(record.permit?.code,'16385');
+    expect(record.permit?.isValid,isTrue);
+    expect(record.hoursFor('fahim'),9);
+    expect(record.overtimeFor('fahim'),1);
+    restored.deleteGroup('group-1');
+    expect(restored.attendance.any((a)=>a.id==record.id),isTrue);
+    expect(restored.attendance.firstWhere((a)=>a.id==record.id).groupName,'Industrial Site Alpha');
+    expect(PayrollEngine.month(restored,DateTime(2026,11)).workers
+      .firstWhere((w)=>w.person.id=='fahim').lines.any((l)=>l.date=='2026-11-21'),isTrue);
+    restored.demoAs('rafi');
+    await expectLater(restored.postAttendance('group-2',DateTime(2026,11,21),{'tanvir':true},
+      permit:evidence),throwsStateError);
+  });
+
+  testWidgets('attendance publish is disabled before a verified Work Permit',(tester)async{
+    final store=AppStore();await store.initialize();store.enter(username:'admin');
+    await tester.pumpWidget(MaterialApp(theme:cytechTheme(),
+      home:AttendanceEditor(store:store,groupId:'group-1')));
+    await tester.pumpAndSettle();
+    final button=tester.widget<FilledButton>(find.byKey(const Key('publish_attendance')));
+    expect(button.onPressed,isNull);
+    expect(find.text('VERIFY WORK PERMIT FIRST'),findsOneWidget);
+  });
+
+  testWidgets('admin dock has records, member dock does not',(tester)async{
+    final store=AppStore();await store.initialize();store.enter(username:'admin');
+    await tester.pumpWidget(MyApp(store:store));await tester.pumpAndSettle();
+    expect(find.byKey(const Key('dock_5')),findsOneWidget);
+    await tester.tap(find.byKey(const Key('dock_5')));await tester.pumpAndSettle();
+    expect(find.text('Attendance Records'),findsOneWidget);
+    store.demoAs('rafi');await tester.pumpAndSettle();
+    expect(find.byKey(const Key('dock_5')),findsNothing);
   });
 }
